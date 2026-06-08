@@ -1,12 +1,14 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
 	"work-status-bot/internal/works"
@@ -197,6 +199,8 @@ func (telegramReportWorkLister) ListOverlappingMonth(ctx context.Context, month 
 }
 
 func TestHandlerStopAlertWarning(t *testing.T) {
+	var logs bytes.Buffer
+	log, _ := applogger.New(&logs, applogger.EnvProduction, "info")
 	personRepo := newTelegramPeopleRepo()
 	p := people.Person{ID: primitive.NewObjectID(), FirstName: "Ivan", LastName: "Petrenko", NormalizedFullName: people.NormalizeFullName("Ivan", "Petrenko")}
 	_, _ = personRepo.Create(context.Background(), p)
@@ -204,12 +208,15 @@ func TestHandlerStopAlertWarning(t *testing.T) {
 	workRepo := &telegramWorkRepo{records: []works.WorkRecord{{ID: primitive.NewObjectID(), PersonID: p.ID, Title: "API", Status: works.StatusActive, StartedAt: now}}}
 	reportRepo := newTelegramReportsRepo()
 	reportSvc := reports.NewService(reportRepo, personRepo, telegramReportWorkLister{}, nil, 0)
-	handler := NewHandler(10, fakePeopleService{personRepo}, fakeWorkService{workRepo, personRepo, now}, reportSvc, failTelegram{})
+	handler := NewHandlerWithLogger(10, fakePeopleService{personRepo}, fakeWorkService{workRepo, personRepo, now}, reportSvc, failTelegram{}, log)
 	got, err := handler.HandleText(context.Background(), "/stop_work Ivan Petrenko blocked")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(got, "Warning") || len(reportRepo.incidents) != 2 {
 		t.Fatalf("want warning and incidents, got %q %#v", got, reportRepo.incidents)
+	}
+	if !strings.Contains(logs.String(), `"event":"telegram.alert_send"`) || !strings.Contains(logs.String(), `"outcome":"failure"`) {
+		t.Fatalf("alert failure log missing: %s", logs.String())
 	}
 }

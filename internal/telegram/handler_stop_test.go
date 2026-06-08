@@ -1,11 +1,13 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
 	"time"
 
+	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
 	"work-status-bot/internal/works"
@@ -23,6 +25,8 @@ func (t *okTelegram) SendMessage(ctx context.Context, chatID int64, text string)
 }
 
 func TestHandlerStopAlertSuccess(t *testing.T) {
+	var logs bytes.Buffer
+	log, _ := applogger.New(&logs, applogger.EnvProduction, "info")
 	personRepo := newTelegramPeopleRepo()
 	p := people.Person{ID: primitive.NewObjectID(), FirstName: "Ivan", LastName: "Petrenko", NormalizedFullName: people.NormalizeFullName("Ivan", "Petrenko")}
 	_, _ = personRepo.Create(context.Background(), p)
@@ -31,7 +35,7 @@ func TestHandlerStopAlertSuccess(t *testing.T) {
 	reportRepo := newTelegramReportsRepo()
 	reportSvc := reports.NewService(reportRepo, personRepo, telegramReportWorkLister{}, nil, 0)
 	tg := &okTelegram{}
-	handler := NewHandler(10, fakePeopleService{personRepo}, fakeWorkService{workRepo, personRepo, now}, reportSvc, tg)
+	handler := NewHandlerWithLogger(10, fakePeopleService{personRepo}, fakeWorkService{workRepo, personRepo, now}, reportSvc, tg, log)
 	got, err := handler.HandleText(context.Background(), "/stop_work Ivan Petrenko done")
 	if err != nil {
 		t.Fatal(err)
@@ -44,5 +48,8 @@ func TestHandlerStopAlertSuccess(t *testing.T) {
 	}
 	if len(reportRepo.incidents) != 1 || reportRepo.incidents[0].Type != reports.IncidentStopped {
 		t.Fatalf("stopped incident missing: %#v", reportRepo.incidents)
+	}
+	if !strings.Contains(logs.String(), `"event":"telegram.alert_send"`) || !strings.Contains(logs.String(), `"outcome":"success"`) {
+		t.Fatalf("alert success log missing: %s", logs.String())
 	}
 }

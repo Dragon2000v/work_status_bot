@@ -4,17 +4,37 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 
+	"work-status-bot/internal/config"
+	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/reports"
 )
 
 type fakeCronReports struct {
-	reports map[string]reports.MonthlyReport
+	reports  map[string]reports.MonthlyReport
+	sendErr  error
+	lastSent reports.MonthlyReport
+}
+
+type fakeWebhookRegistrar struct {
+	calls       int
+	webhookURL  string
+	secretToken string
+	err         error
+}
+
+func (f *fakeWebhookRegistrar) SetWebhook(ctx context.Context, webhookURL, secretToken string) error {
+	f.calls++
+	f.webhookURL = webhookURL
+	f.secretToken = secretToken
+	return f.err
 }
 
 func (f *fakeCronReports) GenerateMonthly(ctx context.Context, month, source string) (reports.GenerateResult, error) {
@@ -33,7 +53,8 @@ func (f *fakeCronReports) GenerateMonthly(ctx context.Context, month, source str
 }
 
 func (f *fakeCronReports) SendReportToGroup(ctx context.Context, report reports.MonthlyReport, duplicate bool) error {
-	return nil
+	f.lastSent = report
+	return f.sendErr
 }
 
 func TestHealth(t *testing.T) {
@@ -42,6 +63,20 @@ func TestHealth(t *testing.T) {
 	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("status %d", res.Code)
+	}
+}
+
+func TestHealthRequestLogging(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	router := NewRouterWithLogger("secret", http.NewServeMux(), &fakeCronReports{reports: map[string]reports.MonthlyReport{}}, log)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health", nil))
+	out := buf.String()
+	for _, want := range []string{`"event":"http.request"`, `"method":"GET"`, `"path":"/health"`, `"status":200`, `"duration_ms":`, `"remote_addr":`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in %s", want, out)
+		}
 	}
 }
 
@@ -69,6 +104,129 @@ func TestCronMonthlyReport(t *testing.T) {
 	router.ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("invalid month status %d", res.Code)
+	}
+}
+
+func TestCronLogging(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	fake := &fakeCronReports{reports: map[string]reports.MonthlyReport{}}
+	router := NewRouterWithLogger("super-secret-cron", http.NewServeMux(), fake, log)
+
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"2026-06"}`)))
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("want unauthorized")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"bad"}`))
+	req.Header.Set("X-Cron-Secret", "super-secret-cron")
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("want invalid month")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"2026-06"}`))
+	req.Header.Set("X-Cron-Secret", "super-secret-cron")
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	assertCronStatus(t, res, "generated")
+
+	req = httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"2026-06"}`))
+	req.Header.Set("X-Cron-Secret", "super-secret-cron")
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	assertCronStatus(t, res, "duplicate")
+
+	out := buf.String()
+	for _, want := range []string{`"event":"cron.monthly_report_triggered"`, `"event":"cron.monthly_report_result"`, `"event":"cron.monthly_report_send"`, `"outcome":"unauthorized"`, `"outcome":"invalid"`, `"outcome":"generated"`, `"outcome":"duplicate"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in %s", want, out)
+		}
+	}
+	if strings.Contains(out, "super-secret-cron") || strings.Contains(out, "X-Cron-Secret") {
+		t.Fatalf("cron secret leaked: %s", out)
+	}
+}
+
+func TestCronSendFailureLogging(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	fake := &fakeCronReports{reports: map[string]reports.MonthlyReport{}, sendErr: errors.New("send failed")}
+	router := NewRouterWithLogger("secret", http.NewServeMux(), fake, log)
+	req := httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"2026-06"}`))
+	req.Header.Set("X-Cron-Secret", "secret")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d", res.Code)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"event":"cron.monthly_report_send"`) || !strings.Contains(out, `"outcome":"failed"`) {
+		t.Fatalf("missing send failure log: %s", out)
+	}
+}
+
+func TestStartupLoggingDoesNotExposeSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	cfg := config.Config{
+		AppEnv:                "production",
+		LogLevel:              "info",
+		AppAddr:               ":8080",
+		MongoDBURI:            "mongodb+srv://user:password@cluster.example.net/?retryWrites=true",
+		MongoDBDatabase:       "work_status_bot",
+		TelegramBotToken:      "telegram-token",
+		TelegramWebhookSecret: "webhook-secret",
+		CronSecret:            "cron-secret",
+	}
+	logAppStart(log)
+	logConfigLoaded(log, cfg)
+	out := buf.String()
+	for _, want := range []string{`"event":"app.start"`, `"event":"config.loaded"`, `"app_env":"production"`, `"log_level":"info"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in %s", want, out)
+		}
+	}
+	for _, secret := range []string{cfg.MongoDBURI, "password", cfg.TelegramBotToken, cfg.TelegramWebhookSecret, cfg.CronSecret} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("secret leaked: %s in %s", secret, out)
+		}
+	}
+}
+
+func TestRegisterTelegramWebhookSkipAndCall(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	registrar := &fakeWebhookRegistrar{}
+	cfg := config.Config{TelegramAutoSetWebhook: false, TelegramWebhookURL: "https://example.com/telegram/webhook", TelegramWebhookSecret: "webhook-secret"}
+	if err := registerTelegramWebhook(context.Background(), cfg, registrar, log); err != nil {
+		t.Fatal(err)
+	}
+	if registrar.calls != 0 || !strings.Contains(buf.String(), `"outcome":"skipped"`) {
+		t.Fatalf("skip failed calls=%d logs=%s", registrar.calls, buf.String())
+	}
+
+	cfg.TelegramAutoSetWebhook = true
+	if err := registerTelegramWebhook(context.Background(), cfg, registrar, log); err != nil {
+		t.Fatal(err)
+	}
+	if registrar.calls != 1 || registrar.webhookURL != cfg.TelegramWebhookURL || registrar.secretToken != cfg.TelegramWebhookSecret {
+		t.Fatalf("registration not called correctly: %#v", registrar)
+	}
+	if strings.Contains(buf.String(), cfg.TelegramWebhookSecret) {
+		t.Fatalf("webhook secret leaked: %s", buf.String())
+	}
+}
+
+func TestRegisterTelegramWebhookFailure(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	registrar := &fakeWebhookRegistrar{err: errors.New("telegram failed")}
+	cfg := config.Config{TelegramAutoSetWebhook: true, TelegramWebhookURL: "https://example.com/telegram/webhook", TelegramWebhookSecret: "webhook-secret"}
+	if err := registerTelegramWebhook(context.Background(), cfg, registrar, log); err == nil {
+		t.Fatalf("want registration error")
 	}
 }
 
