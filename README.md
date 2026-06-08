@@ -13,15 +13,27 @@ Go Telegram webhook bot for team work status tracking.
 
 ## Environment
 
+Copy `.env.example` to `.env` for local development and replace placeholders with local values. Do not commit real secrets.
+
 ```bash
 APP_ADDR=:8080
-MONGODB_URI=mongodb+srv://...
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority
 MONGODB_DATABASE=work_status_bot
-TELEGRAM_BOT_TOKEN=123456:token
-TELEGRAM_GROUP_CHAT_ID=-1001234567890
-TELEGRAM_WEBHOOK_SECRET=change-me
-CRON_SECRET=change-me
+TELEGRAM_BOT_TOKEN=<telegram-bot-token>
+TELEGRAM_GROUP_CHAT_ID=<telegram-group-chat-id>
+TELEGRAM_WEBHOOK_SECRET=<random-secret>
+CRON_SECRET=<random-secret>
 ```
+
+Env variable source:
+
+- `APP_ADDR`: local bind address for this HTTP service.
+- `MONGODB_URI`: MongoDB Atlas connection string from Atlas cluster connect flow.
+- `MONGODB_DATABASE`: database name to use in MongoDB Atlas.
+- `TELEGRAM_BOT_TOKEN`: token from BotFather.
+- `TELEGRAM_GROUP_CHAT_ID`: Telegram group chat ID for allowed commands and alerts.
+- `TELEGRAM_WEBHOOK_SECRET`: random secret used when configuring Telegram webhook delivery.
+- `CRON_SECRET`: random secret required in `X-Cron-Secret` for external monthly report trigger.
 
 ## Commands
 
