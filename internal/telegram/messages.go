@@ -5,30 +5,68 @@ import (
 	"strings"
 	"time"
 
+	"work-status-bot/internal/i18n"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
 	"work-status-bot/internal/works"
 )
 
 func HelpMessage() string {
-	return strings.Join([]string{
-		"/add_person <first_name> <last_name>",
-		"/start_work <first_name> <last_name> \"<title>\"",
-		"/status",
-		"/stop_work <first_name> <last_name> [reason]",
-		"/report_month [YYYY-MM]",
-	}, "\n")
+	return HelpMessageLang(i18n.Ukrainian)
+}
+
+func HelpMessageLang(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeyHelpText)
+}
+
+func MenuMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeyMenuTitle)
+}
+
+func SettingsMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeySettingsTitle)
+}
+
+func LanguageMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeyLanguageTitle)
+}
+
+func ActionPromptMessage(lang i18n.Language, action string) string {
+	switch action {
+	case CallbackMenuAddPerson:
+		return i18n.T(lang, i18n.KeyPromptAddPerson)
+	case CallbackMenuStartWork:
+		return i18n.T(lang, i18n.KeyPromptStartWork)
+	case CallbackMenuStopWork:
+		return i18n.T(lang, i18n.KeyPromptStopWork)
+	case CallbackMenuReportMonth:
+		return i18n.T(lang, i18n.KeyPromptReportMonth)
+	default:
+		return i18n.T(lang, i18n.KeyUnsupportedAction)
+	}
 }
 
 func PersonAddedMessage(p people.Person) string {
-	return fmt.Sprintf("Added %s %s.", p.FirstName, p.LastName)
+	return PersonAddedMessageLang(i18n.Ukrainian, p)
+}
+
+func PersonAddedMessageLang(lang i18n.Language, p people.Person) string {
+	return fmt.Sprintf(i18n.T(lang, i18n.KeyPersonAdded), p.FirstName, p.LastName)
 }
 
 func WorkStartedMessage(p people.Person, r works.WorkRecord) string {
-	return fmt.Sprintf("Started work for %s %s: %s at %s.", p.FirstName, p.LastName, r.Title, works.FormatKyiv(r.StartedAt))
+	return WorkStartedMessageLang(i18n.Ukrainian, p, r)
+}
+
+func WorkStartedMessageLang(lang i18n.Language, p people.Person, r works.WorkRecord) string {
+	return fmt.Sprintf(i18n.T(lang, i18n.KeyWorkStarted), p.FirstName, p.LastName, r.Title, works.FormatKyiv(r.StartedAt))
 }
 
 func StatusMessage(persons []people.Person, records []works.WorkRecord, now time.Time) string {
+	return StatusMessageLang(i18n.Ukrainian, persons, records, now)
+}
+
+func StatusMessageLang(lang i18n.Language, persons []people.Person, records []works.WorkRecord, now time.Time) string {
 	active := map[string]works.WorkRecord{}
 	for _, r := range records {
 		if r.Status == works.StatusActive {
@@ -39,25 +77,29 @@ func StatusMessage(persons []people.Person, records []works.WorkRecord, now time
 	for _, p := range persons {
 		r, ok := active[p.ID.Hex()]
 		if !ok {
-			lines = append(lines, fmt.Sprintf("%s %s: inactive", p.FirstName, p.LastName))
+			lines = append(lines, fmt.Sprintf(i18n.T(lang, i18n.KeyStatusInactive), p.FirstName, p.LastName))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s %s: %s, active since %s, elapsed %s", p.FirstName, p.LastName, r.Title, works.FormatKyiv(r.StartedAt), works.FormatDuration(works.Elapsed(r, now))))
+		lines = append(lines, fmt.Sprintf(i18n.T(lang, i18n.KeyStatusActive), p.FirstName, p.LastName, r.Title, works.FormatKyiv(r.StartedAt), works.FormatDuration(works.Elapsed(r, now))))
 	}
 	if len(lines) == 0 {
-		return "No people tracked."
+		return i18n.T(lang, i18n.KeyStatusNoPeople)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func WorkStoppedMessage(p people.Person, r works.WorkRecord, warning string) string {
+	return WorkStoppedMessageLang(i18n.Ukrainian, p, r, warning)
+}
+
+func WorkStoppedMessageLang(lang i18n.Language, p people.Person, r works.WorkRecord, warning string) string {
 	stopped := ""
 	if r.StoppedAt != nil {
 		stopped = works.FormatKyiv(*r.StoppedAt)
 	}
-	msg := fmt.Sprintf("Stopped work for %s %s: %s at %s.", p.FirstName, p.LastName, r.Title, stopped)
+	msg := fmt.Sprintf(i18n.T(lang, i18n.KeyWorkStopped), p.FirstName, p.LastName, r.Title, stopped)
 	if warning != "" {
-		msg += "\nWarning: " + warning
+		msg += "\n" + i18n.T(lang, i18n.KeyWarning) + ": " + warning
 	}
 	return msg
 }
@@ -65,21 +107,28 @@ func WorkStoppedMessage(p people.Person, r works.WorkRecord, warning string) str
 func StopAlertMessage(p people.Person, r works.WorkRecord) string {
 	reason := ""
 	if r.StopReason != "" {
-		reason = " Reason: " + r.StopReason
+		reason = " " + i18n.T(i18n.Ukrainian, i18n.KeyReason) + ": " + r.StopReason
 	}
-	return fmt.Sprintf("Alert: %s %s stopped work \"%s\".%s", p.FirstName, p.LastName, r.Title, reason)
+	return fmt.Sprintf(i18n.T(i18n.Ukrainian, i18n.KeyAlertStopped), p.FirstName, p.LastName, r.Title) + reason
 }
 
 func ReportMessage(result reports.GenerateResult) string {
 	if result.Duplicate {
-		return "Report already exists.\n" + result.Report.Content
+		return i18n.T(i18n.Ukrainian, i18n.KeyReportDuplicate) + "\n" + result.Report.Content
 	}
 	return result.Report.Content
 }
 
 func ErrorMessage(err error) string {
+	return ErrorMessageLang(i18n.Ukrainian, err)
+}
+
+func ErrorMessageLang(lang i18n.Language, err error) string {
 	if err == nil {
 		return ""
 	}
-	return "Error: " + err.Error()
+	if err == ErrMalformedCommand {
+		return i18n.T(lang, i18n.KeyGenericError) + ": " + i18n.T(lang, i18n.KeyMalformedCommand)
+	}
+	return i18n.T(lang, i18n.KeyGenericError) + ": " + err.Error()
 }

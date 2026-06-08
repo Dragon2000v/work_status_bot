@@ -20,7 +20,7 @@ func TestHandlerCommandErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.HasPrefix(got, "Error:") {
+		if !strings.HasPrefix(got, "Помилка:") {
 			t.Fatalf("want error for %s, got %q", text, got)
 		}
 	}

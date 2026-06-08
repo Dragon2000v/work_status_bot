@@ -24,11 +24,11 @@ func TestHandlerReportMonth(t *testing.T) {
 		t.Fatalf("default month missing: %q", got)
 	}
 	got, _ = handler.HandleText(context.Background(), "/report_month 2026-06")
-	if !strings.Contains(got, "already exists") {
+	if !strings.Contains(got, "Звіт уже існує") {
 		t.Fatalf("duplicate missing: %q", got)
 	}
 	got, _ = handler.HandleText(context.Background(), "/report_month bad")
-	if !strings.HasPrefix(got, "Error:") {
+	if !strings.HasPrefix(got, "Помилка:") {
 		t.Fatalf("want invalid month error, got %q", got)
 	}
 }

@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -18,6 +19,20 @@ import (
 
 type telegramPeopleRepo struct {
 	people map[string]people.Person
+}
+
+func TestUpdateDecodesMessageIDAndCallbackQuery(t *testing.T) {
+	var update Update
+	raw := `{"update_id":1,"message":{"message_id":55,"text":"/help","from":{"id":77},"chat":{"id":10}},"callback_query":{"id":"cb1","from":{"id":78},"message":{"message_id":56,"chat":{"id":10}},"data":"menu:help"}}`
+	if err := json.Unmarshal([]byte(raw), &update); err != nil {
+		t.Fatal(err)
+	}
+	if update.Message.MessageID != 55 || update.Message.From.ID != 77 {
+		t.Fatalf("message decode: %#v", update.Message)
+	}
+	if update.CallbackQuery.ID != "cb1" || update.CallbackQuery.From.ID != 78 || update.CallbackQuery.Message.MessageID != 56 || update.CallbackQuery.Data != "menu:help" {
+		t.Fatalf("callback decode: %#v", update.CallbackQuery)
+	}
 }
 
 func newTelegramPeopleRepo() *telegramPeopleRepo {
@@ -123,7 +138,7 @@ func TestHandlerHappyPaths(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s err: %v", text, err)
 		}
-		if got == "" || strings.HasPrefix(got, "Error:") && text != "/stop_work Ivan Petrenko done" {
+		if got == "" || strings.HasPrefix(got, "Помилка:") && text != "/stop_work Ivan Petrenko done" {
 			t.Fatalf("%s bad response: %q", text, got)
 		}
 	}
@@ -138,7 +153,7 @@ func TestHandlerErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.HasPrefix(got, "Error:") {
+		if !strings.HasPrefix(got, "Помилка:") {
 			t.Fatalf("want error for %s, got %q", text, got)
 		}
 	}
@@ -213,7 +228,7 @@ func TestHandlerStopAlertWarning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, "Warning") || len(reportRepo.incidents) != 2 {
+	if !strings.Contains(got, "Попередження") || len(reportRepo.incidents) != 2 {
 		t.Fatalf("want warning and incidents, got %q %#v", got, reportRepo.incidents)
 	}
 	if !strings.Contains(logs.String(), `"event":"telegram.alert_send"`) || !strings.Contains(logs.String(), `"outcome":"failure"`) {
