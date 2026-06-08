@@ -21,13 +21,13 @@ validated independently.
 
 **Purpose**: Initialize the Go service skeleton and shared runtime configuration.
 
-- [ ] T001 Create Go module definition in go.mod
-- [ ] T002 Create application entrypoint with chi router skeleton in cmd/bot/main.go
-- [ ] T003 [P] Create environment config loader for APP_ADDR, MONGODB_URI, MONGODB_DATABASE, TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, and CRON_SECRET in internal/config/config.go
-- [ ] T004 [P] Create MongoDB client setup and shutdown helpers using the official MongoDB Go Driver in internal/database/mongo.go
-- [ ] T005 [P] Create MongoDB index setup function for people, work_records, incidents, monthly_reports, and telegram_group_config in internal/database/indexes.go
-- [ ] T006 [P] Create Telegram Bot API HTTP client skeleton using direct HTTP requests in internal/telegram/client.go
-- [ ] T007 Create GET /health route returning {"status":"ok"} in cmd/bot/main.go
+- [X] T001 Create Go module definition in go.mod
+- [X] T002 Create application entrypoint with chi router skeleton in cmd/bot/main.go
+- [X] T003 [P] Create environment config loader for APP_ADDR, MONGODB_URI, MONGODB_DATABASE, TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, and CRON_SECRET in internal/config/config.go
+- [X] T004 [P] Create MongoDB client setup and shutdown helpers using the official MongoDB Go Driver in internal/database/mongo.go
+- [X] T005 [P] Create MongoDB index setup function for people, work_records, incidents, monthly_reports, and telegram_group_config in internal/database/indexes.go
+- [X] T006 [P] Create Telegram Bot API HTTP client skeleton using direct HTTP requests in internal/telegram/client.go
+- [X] T007 Create GET /health route returning {"status":"ok"} in cmd/bot/main.go
 
 ---
 
@@ -37,15 +37,15 @@ validated independently.
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T008 [P] Create Person model with normalized full name fields in internal/people/model.go
-- [ ] T009 [P] Create WorkRecord model with active/stopped statuses and UTC timestamp fields in internal/works/model.go
-- [ ] T010 [P] Create Incident and MonthlyReport models in internal/reports/model.go
-- [ ] T011 [P] Create Europe/Kyiv date formatting and elapsed time helpers from stored timestamps in internal/works/time.go
-- [ ] T012 Create Telegram command parsing types for /help, /add_person, /start_work, /status, /stop_work, and /report_month in internal/telegram/commands.go
-- [ ] T013 Create Telegram message formatting helpers for confirmations, errors, warnings, status, alerts, and reports in internal/telegram/messages.go
-- [ ] T014 Create POST /telegram/webhook route that rejects unconfigured chats and dispatches parsed commands without polling in internal/telegram/handler.go
-- [ ] T015 Create POST /cron/monthly-report route that requires X-Cron-Secret matching CRON_SECRET in cmd/bot/main.go
-- [ ] T016 Document banned technologies and runtime constraints in README.md
+- [X] T008 [P] Create Person model with normalized full name fields in internal/people/model.go
+- [X] T009 [P] Create WorkRecord model with active/stopped statuses and UTC timestamp fields in internal/works/model.go
+- [X] T010 [P] Create Incident and MonthlyReport models in internal/reports/model.go
+- [X] T011 [P] Create Europe/Kyiv date formatting and elapsed time helpers from stored timestamps in internal/works/time.go
+- [X] T012 Create Telegram command parsing types for /help, /add_person, /start_work, /status, /stop_work, and /report_month in internal/telegram/commands.go
+- [X] T013 Create Telegram message formatting helpers for confirmations, errors, warnings, status, alerts, and reports in internal/telegram/messages.go
+- [X] T014 Create POST /telegram/webhook route that rejects unconfigured chats and dispatches parsed commands without polling in internal/telegram/handler.go
+- [X] T015 Create POST /cron/monthly-report route that requires X-Cron-Secret matching CRON_SECRET in cmd/bot/main.go
+- [X] T016 Document banned technologies and runtime constraints in README.md
 
 **Checkpoint**: Foundation ready. All routes exist, shared models exist, and user story work can proceed.
 
@@ -59,20 +59,20 @@ validated independently.
 
 ### Tests for User Story 1
 
-- [ ] T017 [P] [US1] Add person service tests for valid person and duplicate normalized name in internal/people/service_test.go
-- [ ] T018 [P] [US1] Add work service tests for start, status elapsed time from stored timestamps, stop, and no active work errors in internal/works/service_test.go
-- [ ] T019 [P] [US1] Add Telegram command handler tests for /help, /add_person, /start_work, /status, and /stop_work happy paths in internal/telegram/handler_test.go
-- [ ] T020 [P] [US1] Add Telegram command handler error tests for malformed command format, missing arguments, unknown person, no active work record, already stopped work record, and any second active work for the same person regardless of title in internal/telegram/handler_errors_test.go
-- [ ] T021 [P] [US1] Add Telegram command handler test verifying MVP commands require no user role or authentication beyond configured chat validation in internal/telegram/handler_auth_test.go
+- [X] T017 [P] [US1] Add person service tests for valid person and duplicate normalized name in internal/people/service_test.go
+- [X] T018 [P] [US1] Add work service tests for start, status elapsed time from stored timestamps, stop, and no active work errors in internal/works/service_test.go
+- [X] T019 [P] [US1] Add Telegram command handler tests for /help, /add_person, /start_work, /status, and /stop_work happy paths in internal/telegram/handler_test.go
+- [X] T020 [P] [US1] Add Telegram command handler error tests for malformed command format, missing arguments, unknown person, no active work record, already stopped work record, and any second active work for the same person regardless of title in internal/telegram/handler_errors_test.go
+- [X] T021 [P] [US1] Add Telegram command handler test verifying MVP commands require no user role or authentication beyond configured chat validation in internal/telegram/handler_auth_test.go
 
 ### Implementation for User Story 1
 
-- [ ] T022 [P] [US1] Implement PeopleRepository with create and find-by-normalized-name operations in internal/people/repository.go
-- [ ] T023 [P] [US1] Implement WorkRepository with create active, find active by person, stop active, and list status operations in internal/works/repository.go
-- [ ] T024 [US1] Implement PeopleService add person and duplicate validation in internal/people/service.go
-- [ ] T025 [US1] Implement WorkService start, status, and stop operations using stored UTC timestamps in internal/works/service.go
-- [ ] T026 [US1] Wire /help, /add_person, /start_work, /status, and /stop_work commands to services in internal/telegram/handler.go
-- [ ] T027 [US1] Format all user-facing dates in Europe/Kyiv timezone in internal/telegram/messages.go
+- [X] T022 [P] [US1] Implement PeopleRepository with create and find-by-normalized-name operations in internal/people/repository.go
+- [X] T023 [P] [US1] Implement WorkRepository with create active, find active by person, stop active, and list status operations in internal/works/repository.go
+- [X] T024 [US1] Implement PeopleService add person and duplicate validation in internal/people/service.go
+- [X] T025 [US1] Implement WorkService start, status, and stop operations using stored UTC timestamps in internal/works/service.go
+- [X] T026 [US1] Wire /help, /add_person, /start_work, /status, and /stop_work commands to services in internal/telegram/handler.go
+- [X] T027 [US1] Format all user-facing dates in Europe/Kyiv timezone in internal/telegram/messages.go
 
 **Checkpoint**: User Story 1 is independently functional and covers MVP daily tracking.
 
@@ -86,17 +86,17 @@ validated independently.
 
 ### Tests for User Story 2
 
-- [ ] T028 [P] [US2] Add report incident service tests for stopped and alert_failed events in internal/reports/service_test.go
-- [ ] T029 [P] [US2] Add Telegram client tests for send message success and failure handling in internal/telegram/client_test.go
-- [ ] T030 [P] [US2] Add stop command handler tests for alert success and alert failure warning in internal/telegram/handler_stop_test.go
+- [X] T028 [P] [US2] Add report incident service tests for stopped and alert_failed events in internal/reports/service_test.go
+- [X] T029 [P] [US2] Add Telegram client tests for send message success and failure handling in internal/telegram/client_test.go
+- [X] T030 [P] [US2] Add stop command handler tests for alert success and alert failure warning in internal/telegram/handler_stop_test.go
 
 ### Implementation for User Story 2
 
-- [ ] T031 [P] [US2] Implement IncidentRepository create and list-by-month operations in internal/reports/repository.go
-- [ ] T032 [US2] Implement ReportsService incident creation for stopped and alert_failed events in internal/reports/service.go
-- [ ] T033 [US2] Implement TelegramClient SendMessage through direct Telegram Bot API HTTP request in internal/telegram/client.go
-- [ ] T034 [US2] Update WorkService stop flow to save stopped incident before alert attempt in internal/works/service.go
-- [ ] T035 [US2] Update /stop_work handler to attempt alert, record alert_failed on send failure, and return visible warning in internal/telegram/handler.go
+- [X] T031 [P] [US2] Implement IncidentRepository create and list-by-month operations in internal/reports/repository.go
+- [X] T032 [US2] Implement ReportsService incident creation for stopped and alert_failed events in internal/reports/service.go
+- [X] T033 [US2] Implement TelegramClient SendMessage through direct Telegram Bot API HTTP request in internal/telegram/client.go
+- [X] T034 [US2] Update WorkService stop flow to save stopped incident before alert attempt in internal/works/service.go
+- [X] T035 [US2] Update /stop_work handler to attempt alert, record alert_failed on send failure, and return visible warning in internal/telegram/handler.go
 
 **Checkpoint**: Stop alerts and alert failure semantics are independently testable.
 
@@ -110,19 +110,19 @@ validated independently.
 
 ### Tests for User Story 3
 
-- [ ] T036 [P] [US3] Add report service tests for month overlap inclusion across active, started-in-month, stopped-in-month, and cross-month records in internal/reports/service_report_test.go
-- [ ] T037 [P] [US3] Add duplicate monthly report repository tests for unique month behavior in internal/reports/repository_test.go
-- [ ] T038 [P] [US3] Add /report_month command handler tests for default current month, YYYY-MM argument, invalid month format, and duplicate notice in internal/telegram/handler_report_test.go
-- [ ] T039 [P] [US3] Add POST /cron/monthly-report HTTP tests for X-Cron-Secret success, missing header, invalid header, generated response, duplicate response, and invalid month format in cmd/bot/main_test.go
+- [X] T036 [P] [US3] Add report service tests for month overlap inclusion across active, started-in-month, stopped-in-month, and cross-month records in internal/reports/service_report_test.go
+- [X] T037 [P] [US3] Add duplicate monthly report repository tests for unique month behavior in internal/reports/repository_test.go
+- [X] T038 [P] [US3] Add /report_month command handler tests for default current month, YYYY-MM argument, invalid month format, and duplicate notice in internal/telegram/handler_report_test.go
+- [X] T039 [P] [US3] Add POST /cron/monthly-report HTTP tests for X-Cron-Secret success, missing header, invalid header, generated response, duplicate response, and invalid month format in cmd/bot/main_test.go
 
 ### Implementation for User Story 3
 
-- [ ] T040 [P] [US3] Implement MonthlyReport repository create-if-absent and find-by-month operations in internal/reports/repository.go
-- [ ] T041 [P] [US3] Implement WorkRepository list records overlapping selected month query in internal/works/repository.go
-- [ ] T042 [US3] Implement ReportsService monthly report generation with people, overlapping work records, elapsed time, incidents, and duplicate prevention in internal/reports/service.go
-- [ ] T043 [US3] Implement /report_month command parsing and report response formatting in internal/telegram/handler.go
-- [ ] T044 [US3] Implement POST /cron/monthly-report request parsing, X-Cron-Secret validation, and response bodies in cmd/bot/main.go
-- [ ] T045 [US3] Send generated report or duplicate notice to configured Telegram group for external cron trigger in internal/reports/service.go
+- [X] T040 [P] [US3] Implement MonthlyReport repository create-if-absent and find-by-month operations in internal/reports/repository.go
+- [X] T041 [P] [US3] Implement WorkRepository list records overlapping selected month query in internal/works/repository.go
+- [X] T042 [US3] Implement ReportsService monthly report generation with people, overlapping work records, elapsed time, incidents, and duplicate prevention in internal/reports/service.go
+- [X] T043 [US3] Implement /report_month command parsing and report response formatting in internal/telegram/handler.go
+- [X] T044 [US3] Implement POST /cron/monthly-report request parsing, X-Cron-Secret validation, and response bodies in cmd/bot/main.go
+- [X] T045 [US3] Send generated report or duplicate notice to configured Telegram group for external cron trigger in internal/reports/service.go
 
 **Checkpoint**: Monthly reporting works manually and from an external scheduled HTTP request without internal timers.
 
@@ -132,12 +132,12 @@ validated independently.
 
 **Purpose**: Validate full behavior, remove rough edges, and document operation.
 
-- [ ] T046 [P] Add command usage examples and environment variable reference in README.md
-- [ ] T047 [P] Add quickstart validation notes for webhook setup, cron secret, and MongoDB Atlas indexes in README.md
-- [ ] T048 Run gofmt on all Go files in cmd/ and internal/
-- [ ] T049 Run go test ./... and fix any failing tests in cmd/ and internal/
-- [ ] T050 Verify no implementation uses Redis, queues, WebSockets, Telegram polling, in-memory timers, background infinite loops, or web UI files in cmd/, internal/, go.mod, and README.md
-- [ ] T051 Validate quickstart scenarios from specs/001-team-status-bot/quickstart.md against the implemented commands and HTTP routes, including local/manual timing checks that GET /health responds under 1 second and Telegram command handlers plus report generation respond under 5 seconds for normal MVP-sized data
+- [X] T046 [P] Add command usage examples and environment variable reference in README.md
+- [X] T047 [P] Add quickstart validation notes for webhook setup, cron secret, and MongoDB Atlas indexes in README.md
+- [X] T048 Run gofmt on all Go files in cmd/ and internal/
+- [X] T049 Run go test ./... and fix any failing tests in cmd/ and internal/
+- [X] T050 Verify no implementation uses Redis, queues, WebSockets, Telegram polling, in-memory timers, background infinite loops, or web UI files in cmd/, internal/, go.mod, and README.md
+- [X] T051 Validate quickstart scenarios from specs/001-team-status-bot/quickstart.md against the implemented commands and HTTP routes, including local/manual timing checks that GET /health responds under 1 second and Telegram command handlers plus report generation respond under 5 seconds for normal MVP-sized data
 
 ---
 
