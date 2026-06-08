@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +16,51 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func TestClientAdditionalBotAPIPayloads(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		paths = append(paths, r.URL.Path)
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString("{}"))}, nil
+	})}
+	client := NewClient("secret-token", httpClient)
+	client.baseURL = "https://telegram.test"
+	keyboard := &InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{{{Text: "Статус", CallbackData: CallbackMenuStatus}}}}
+	if err := client.SendMessageWithKeyboard(context.Background(), 10, "menu", keyboard); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.AnswerCallbackQuery(context.Background(), "cb1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.DeleteMessage(context.Background(), 10, 55); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.EditMessageText(context.Background(), 10, 56, "edit", keyboard); err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{"/botsecret-token/sendMessage", "/botsecret-token/answerCallbackQuery", "/botsecret-token/deleteMessage", "/botsecret-token/editMessageText"}
+	for i := range wantPaths {
+		if paths[i] != wantPaths[i] {
+			t.Fatalf("path %d = %s", i, paths[i])
+		}
+	}
+	if _, ok := bodies[0]["reply_markup"]; !ok {
+		t.Fatalf("sendMessage missing keyboard: %#v", bodies[0])
+	}
+	if bodies[1]["callback_query_id"] != "cb1" {
+		t.Fatalf("answer body: %#v", bodies[1])
+	}
+	if bodies[2]["message_id"].(float64) != 55 {
+		t.Fatalf("delete body: %#v", bodies[2])
+	}
+	if _, ok := bodies[3]["reply_markup"]; !ok {
+		t.Fatalf("edit missing keyboard: %#v", bodies[3])
+	}
 }
 
 func TestClientSendMessageSuccessAndFailure(t *testing.T) {

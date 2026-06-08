@@ -40,10 +40,10 @@ func TestHandlerStopAlertSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, "Stopped work") || strings.Contains(got, "Warning") {
+	if !strings.Contains(got, "зупинено") || strings.Contains(got, "Попередження") {
 		t.Fatalf("bad stop response: %q", got)
 	}
-	if len(tg.messages) != 1 || !strings.Contains(tg.messages[0], "Alert:") {
+	if len(tg.messages) != 1 || !strings.Contains(tg.messages[0], "Увага:") {
 		t.Fatalf("alert not sent: %#v", tg.messages)
 	}
 	if len(reportRepo.incidents) != 1 || reportRepo.incidents[0].Type != reports.IncidentStopped {

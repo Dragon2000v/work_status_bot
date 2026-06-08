@@ -64,6 +64,11 @@ Example events:
 - `telegram.webhook_received`
 - `telegram.command`
 - `telegram.command_result`
+- `telegram.callback_received`
+- `telegram.callback_result`
+- `telegram.callback_answer`
+- `telegram.user_language_changed`
+- `telegram.command_delete`
 - `telegram.send`
 - `telegram.alert_send`
 - `cron.monthly_report_triggered`
@@ -71,6 +76,22 @@ Example events:
 - `cron.monthly_report_send`
 
 ## Commands
+
+Ukrainian is the default language for bot messages and public group output. Users can
+change their own language from Settings using the inline button menu. Supported
+user-specific languages are Ukrainian, English, and Russian. The bot does not ask for
+language on every interaction.
+
+The `/help` command shows the inline button menu. Menu buttons use Telegram
+InlineKeyboardMarkup and support the same core actions as text commands:
+
+- Add person
+- Start work
+- Status
+- Stop work
+- Monthly report
+- Settings
+- Help
 
 ```text
 /help
@@ -81,6 +102,12 @@ Example events:
 /report_month
 /report_month 2026-06
 ```
+
+Text commands remain available as fallback. After processing a user command, the bot
+attempts to delete only that user's command message. This cleanup is best-effort: if the
+bot has no permission to delete messages, the command still completes and the failure is
+logged. Bot responses, reports, alerts, incident messages, and monthly reports are not
+deleted by command cleanup.
 
 ## HTTP Routes
 
@@ -100,6 +127,7 @@ go run ./cmd/bot
 
 - Configure Telegram webhook to `https://<host>/telegram/webhook`.
 - Create MongoDB Atlas database and let startup ensure indexes for people, work records, incidents, monthly reports, and group config.
+- Startup also ensures the `user_settings` index used for per-user language preferences.
 - Trigger monthly reports from external scheduler with `POST /cron/monthly-report`; do not run in-process cron.
 - `GET /health` should respond under 1 second.
 - Telegram command handlers and report generation should respond under 5 seconds for MVP-sized data.

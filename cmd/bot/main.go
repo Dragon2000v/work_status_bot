@@ -19,6 +19,7 @@ import (
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
 	"work-status-bot/internal/telegram"
+	"work-status-bot/internal/users"
 	"work-status-bot/internal/works"
 )
 
@@ -60,14 +61,16 @@ func main() {
 	peopleRepo := people.NewRepository(db)
 	workRepo := works.NewRepository(db)
 	reportRepo := reports.NewRepository(db)
+	userRepo := users.NewRepository(db)
 	peopleSvc := people.NewService(peopleRepo)
 	workSvc := works.NewService(peopleRepo, workRepo)
+	userSvc := users.NewService(userRepo)
 	tg := telegram.NewClientWithLogger(cfg.TelegramBotToken, http.DefaultClient, log)
 	if err := registerTelegramWebhook(ctx, cfg, tg, log); err != nil {
 		os.Exit(1)
 	}
 	reportSvc := reports.NewService(reportRepo, peopleRepo, workSvc, tg, cfg.TelegramGroupChatID)
-	handler := telegram.NewHandlerWithLogger(cfg.TelegramGroupChatID, peopleSvc, workSvc, reportSvc, tg, log)
+	handler := telegram.NewHandlerWithUsersAndLogger(cfg.TelegramGroupChatID, peopleSvc, workSvc, reportSvc, userSvc, tg, log)
 
 	router := NewRouterWithLogger(cfg.CronSecret, handler, reportSvc, log)
 	log.Info("application listen", "event", "app.listen", "operation", "startup", "addr", cfg.AppAddr, "outcome", "success")

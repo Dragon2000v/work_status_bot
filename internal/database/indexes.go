@@ -35,6 +35,12 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 	}); err != nil {
 		return err
 	}
+	if _, err := db.Collection("user_settings").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "telegram_user_id", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	}); err != nil {
+		return err
+	}
 	_, err := db.Collection("telegram_group_config").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "chat_id", Value: 1}},
 		Options: options.Index().SetUnique(true),

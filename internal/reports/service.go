@@ -105,7 +105,7 @@ func (s *Service) SendReportToGroup(ctx context.Context, report MonthlyReport, d
 	}
 	prefix := ""
 	if duplicate {
-		prefix = "Report already exists.\n"
+		prefix = "Звіт уже існує.\n"
 	}
 	return s.telegram.SendMessage(ctx, s.groupChat, prefix+report.Content)
 }
@@ -117,25 +117,25 @@ func RenderMonthlyReport(month string, persons []people.Person, records []works.
 		byPerson[p.ID] = p
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Monthly report %s\n\nPeople:\n", month)
+	fmt.Fprintf(&b, "Місячний звіт %s\n\nЛюди:\n", month)
 	for _, p := range persons {
 		fmt.Fprintf(&b, "- %s %s\n", p.FirstName, p.LastName)
 	}
-	b.WriteString("\nWork records:\n")
+	b.WriteString("\nРоботи:\n")
 	if len(records) == 0 {
-		b.WriteString("- none\n")
+		b.WriteString("- немає\n")
 	}
 	for _, r := range records {
 		p := byPerson[r.PersonID]
-		fmt.Fprintf(&b, "- %s %s: %s, %s, started %s, elapsed %s\n", p.FirstName, p.LastName, r.Title, r.Status, works.FormatKyiv(r.StartedAt), works.FormatDuration(works.Elapsed(r, now)))
+		fmt.Fprintf(&b, "- %s %s: %s, %s, початок %s, минуло %s\n", p.FirstName, p.LastName, r.Title, r.Status, works.FormatKyiv(r.StartedAt), works.FormatDuration(works.Elapsed(r, now)))
 	}
-	b.WriteString("\nIncidents:\n")
+	b.WriteString("\nІнциденти:\n")
 	if len(incidents) == 0 {
-		b.WriteString("- none\n")
+		b.WriteString("- немає\n")
 	}
 	for _, i := range incidents {
 		p := byPerson[i.PersonID]
-		fmt.Fprintf(&b, "- %s %s: %s at %s", p.FirstName, p.LastName, i.Type, works.FormatKyiv(i.OccurredAt))
+		fmt.Fprintf(&b, "- %s %s: %s о %s", p.FirstName, p.LastName, i.Type, works.FormatKyiv(i.OccurredAt))
 		if i.Reason != "" {
 			fmt.Fprintf(&b, " (%s)", i.Reason)
 		}
