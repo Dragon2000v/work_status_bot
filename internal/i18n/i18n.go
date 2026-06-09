@@ -9,39 +9,50 @@ const (
 )
 
 const (
-	KeyMenuTitle         = "menu.title"
-	KeyMenuAddPerson     = "menu.add_person"
-	KeyMenuStartWork     = "menu.start_work"
-	KeyMenuStatus        = "menu.status"
-	KeyMenuStopWork      = "menu.stop_work"
-	KeyMenuReportMonth   = "menu.report_month"
-	KeyMenuSettings      = "menu.settings"
-	KeyMenuHelp          = "menu.help"
-	KeyHelpText          = "help.text"
-	KeySettingsTitle     = "settings.title"
-	KeySettingsLanguage  = "settings.language"
-	KeyLanguageTitle     = "settings.language.title"
-	KeyLanguageUkrainian = "settings.language.uk"
-	KeyLanguageEnglish   = "settings.language.en"
-	KeyLanguageRussian   = "settings.language.ru"
-	KeyLanguageChanged   = "settings.language.changed"
-	KeyUnsupportedAction = "error.unsupported_action"
-	KeyMalformedCommand  = "error.malformed_command"
-	KeyGenericError      = "error.generic"
-	KeyPromptAddPerson   = "prompt.add_person"
-	KeyPromptStartWork   = "prompt.start_work"
-	KeyPromptStopWork    = "prompt.stop_work"
-	KeyPromptReportMonth = "prompt.report_month"
-	KeyPersonAdded       = "person.added"
-	KeyWorkStarted       = "work.started"
-	KeyStatusInactive    = "status.inactive"
-	KeyStatusActive      = "status.active"
-	KeyStatusNoPeople    = "status.no_people"
-	KeyWorkStopped       = "work.stopped"
-	KeyWarning           = "warning"
-	KeyAlertStopped      = "alert.stopped"
-	KeyReason            = "reason"
-	KeyReportDuplicate   = "report.duplicate"
+	KeyMenuTitle            = "menu.title"
+	KeyMenuAddPerson        = "menu.add_person"
+	KeyMenuStartWork        = "menu.start_work"
+	KeyMenuStatus           = "menu.status"
+	KeyMenuStopWork         = "menu.stop_work"
+	KeyMenuReportMonth      = "menu.report_month"
+	KeyMenuSettings         = "menu.settings"
+	KeyMenuHelp             = "menu.help"
+	KeyHelpText             = "help.text"
+	KeySettingsTitle        = "settings.title"
+	KeySettingsLanguage     = "settings.language"
+	KeyLanguageTitle        = "settings.language.title"
+	KeyLanguageUkrainian    = "settings.language.uk"
+	KeyLanguageEnglish      = "settings.language.en"
+	KeyLanguageRussian      = "settings.language.ru"
+	KeyLanguageChanged      = "settings.language.changed"
+	KeyUnsupportedAction    = "error.unsupported_action"
+	KeyMalformedCommand     = "error.malformed_command"
+	KeyGenericError         = "error.generic"
+	KeyPromptAddPerson      = "prompt.add_person"
+	KeyPromptStartWork      = "prompt.start_work"
+	KeyPromptStopWork       = "prompt.stop_work"
+	KeyPromptReportMonth    = "prompt.report_month"
+	KeyPersonAdded          = "person.added"
+	KeyWorkStarted          = "work.started"
+	KeyStatusInactive       = "status.inactive"
+	KeyStatusActive         = "status.active"
+	KeyStatusNoPeople       = "status.no_people"
+	KeyWorkStopped          = "work.stopped"
+	KeyWarning              = "warning"
+	KeyAlertStopped         = "alert.stopped"
+	KeyReason               = "reason"
+	KeyReportDuplicate      = "report.duplicate"
+	KeySetupComplete        = "group.setup.complete"
+	KeySetupAlready         = "group.setup.already"
+	KeySetupReEnabled       = "group.setup.re_enabled"
+	KeySetupGroupOnly       = "group.setup.group_only"
+	KeySetupRequired        = "group.setup.required"
+	KeyGroupsHeader         = "group.list.header"
+	KeyGroupsNone           = "group.list.none"
+	KeyGroupsFallback       = "group.list.fallback"
+	KeyGroupDisabled        = "group.disabled"
+	KeyGroupAlreadyDisabled = "group.already_disabled"
+	KeyGroupNoStored        = "group.no_stored"
 )
 
 var translations = map[string]map[Language]string{
@@ -86,9 +97,9 @@ var translations = map[string]map[Language]string{
 		Russian:   "Помощь",
 	},
 	KeyHelpText: {
-		Ukrainian: "Команди:\n/add_person <ім'я> <прізвище>\n/start_work <ім'я> <прізвище> \"<назва>\"\n/status\n/stop_work <ім'я> <прізвище> [причина]\n/report_month [YYYY-MM]\n\nТакож можна користуватися кнопками меню.",
-		English:   "Commands:\n/add_person <first_name> <last_name>\n/start_work <first_name> <last_name> \"<title>\"\n/status\n/stop_work <first_name> <last_name> [reason]\n/report_month [YYYY-MM]\n\nYou can also use the menu buttons.",
-		Russian:   "Команды:\n/add_person <имя> <фамилия>\n/start_work <имя> <фамилия> \"<название>\"\n/status\n/stop_work <имя> <фамилия> [причина]\n/report_month [YYYY-MM]\n\nТакже можно использовать кнопки меню.",
+		Ukrainian: "Команди:\n/setup\n/groups\n/disable_group\n/add_person <ім'я> <прізвище>\n/start_work <ім'я> <прізвище> \"<назва>\"\n/status\n/stop_work <ім'я> <прізвище> [причина]\n/report_month [YYYY-MM]\n\nТакож можна користуватися кнопками меню.",
+		English:   "Commands:\n/setup\n/groups\n/disable_group\n/add_person <first_name> <last_name>\n/start_work <first_name> <last_name> \"<title>\"\n/status\n/stop_work <first_name> <last_name> [reason]\n/report_month [YYYY-MM]\n\nYou can also use the menu buttons.",
+		Russian:   "Команды:\n/setup\n/groups\n/disable_group\n/add_person <имя> <фамилия>\n/start_work <имя> <фамилия> \"<название>\"\n/status\n/stop_work <имя> <фамилия> [причина]\n/report_month [YYYY-MM]\n\nТакже можно использовать кнопки меню.",
 	},
 	KeySettingsTitle: {
 		Ukrainian: "Налаштування",
@@ -209,6 +220,61 @@ var translations = map[string]map[Language]string{
 		Ukrainian: "Звіт уже існує.",
 		English:   "Report already exists.",
 		Russian:   "Отчет уже существует.",
+	},
+	KeySetupComplete: {
+		Ukrainian: "Налаштування групи завершено.",
+		English:   "Group setup is complete.",
+		Russian:   "Настройка группы завершена.",
+	},
+	KeySetupAlready: {
+		Ukrainian: "Налаштування групи вже було завершено. Назву групи оновлено.",
+		English:   "Group setup was already complete. Group title was updated.",
+		Russian:   "Настройка группы уже была завершена. Название группы обновлено.",
+	},
+	KeySetupReEnabled: {
+		Ukrainian: "Групу знову увімкнено.",
+		English:   "Group has been re-enabled.",
+		Russian:   "Группа снова включена.",
+	},
+	KeySetupGroupOnly: {
+		Ukrainian: "Команда /setup доступна лише в групових чатах.",
+		English:   "/setup is available only in group chats.",
+		Russian:   "Команда /setup доступна только в групповых чатах.",
+	},
+	KeySetupRequired: {
+		Ukrainian: "Цю групу не налаштовано для бота. Попросіть відповідального виконати /setup.",
+		English:   "This group is not set up for the bot. Ask an operator to run /setup.",
+		Russian:   "Эта группа не настроена для бота. Попросите ответственного выполнить /setup.",
+	},
+	KeyGroupsHeader: {
+		Ukrainian: "Налаштовані групи:",
+		English:   "Configured groups:",
+		Russian:   "Настроенные группы:",
+	},
+	KeyGroupsNone: {
+		Ukrainian: "- немає збережених груп",
+		English:   "- no stored groups",
+		Russian:   "- сохраненных групп нет",
+	},
+	KeyGroupsFallback: {
+		Ukrainian: "- Fallback group (%d): enabled",
+		English:   "- Fallback group (%d): enabled",
+		Russian:   "- Fallback group (%d): enabled",
+	},
+	KeyGroupDisabled: {
+		Ukrainian: "Поточну групу вимкнено.",
+		English:   "Current group has been disabled.",
+		Russian:   "Текущая группа отключена.",
+	},
+	KeyGroupAlreadyDisabled: {
+		Ukrainian: "Поточна група вже вимкнена.",
+		English:   "Current group is already disabled.",
+		Russian:   "Текущая группа уже отключена.",
+	},
+	KeyGroupNoStored: {
+		Ukrainian: "Для поточної групи немає збереженого запису, який можна вимкнути.",
+		English:   "There is no stored record for the current group to disable.",
+		Russian:   "Для текущей группы нет сохраненной записи, которую можно отключить.",
 	},
 }
 

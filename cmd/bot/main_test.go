@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"work-status-bot/internal/config"
+	"work-status-bot/internal/groups"
 	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/reports"
 )
@@ -21,6 +22,7 @@ type fakeCronReports struct {
 	reports  map[string]reports.MonthlyReport
 	sendErr  error
 	lastSent reports.MonthlyReport
+	targets  []groups.ReportDeliveryTarget
 }
 
 type fakeWebhookRegistrar struct {
@@ -28,6 +30,15 @@ type fakeWebhookRegistrar struct {
 	webhookURL  string
 	secretToken string
 	err         error
+}
+
+type fakeCronTargets struct {
+	targets []groups.ReportDeliveryTarget
+	err     error
+}
+
+func (f fakeCronTargets) CronTargets(ctx context.Context) ([]groups.ReportDeliveryTarget, error) {
+	return f.targets, f.err
 }
 
 func (f *fakeWebhookRegistrar) SetWebhook(ctx context.Context, webhookURL, secretToken string) error {
@@ -54,6 +65,12 @@ func (f *fakeCronReports) GenerateMonthly(ctx context.Context, month, source str
 
 func (f *fakeCronReports) SendReportToGroup(ctx context.Context, report reports.MonthlyReport, duplicate bool) error {
 	f.lastSent = report
+	return f.sendErr
+}
+
+func (f *fakeCronReports) SendReportToTargets(ctx context.Context, report reports.MonthlyReport, duplicate bool, targets []groups.ReportDeliveryTarget) error {
+	f.lastSent = report
+	f.targets = targets
 	return f.sendErr
 }
 
@@ -165,6 +182,20 @@ func TestCronSendFailureLogging(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, `"event":"cron.monthly_report_send"`) || !strings.Contains(out, `"outcome":"failed"`) {
 		t.Fatalf("missing send failure log: %s", out)
+	}
+}
+
+func TestCronMonthlyReportFanOutTargets(t *testing.T) {
+	fake := &fakeCronReports{reports: map[string]reports.MonthlyReport{}}
+	targets := fakeCronTargets{targets: []groups.ReportDeliveryTarget{{TelegramChatID: -1001}, {TelegramChatID: -1002}}}
+	router := NewRouterWithGroupTargets("secret", http.NewServeMux(), fake, targets, nil)
+	req := httptest.NewRequest(http.MethodPost, "/cron/monthly-report", bytes.NewBufferString(`{"month":"2026-06"}`))
+	req.Header.Set("X-Cron-Secret", "secret")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	assertCronStatus(t, res, "generated")
+	if len(fake.targets) != 2 || fake.targets[0].TelegramChatID != -1001 || fake.targets[1].TelegramChatID != -1002 {
+		t.Fatalf("fan-out targets not passed: %#v", fake.targets)
 	}
 }
 

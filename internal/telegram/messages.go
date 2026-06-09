@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"work-status-bot/internal/groups"
 	"work-status-bot/internal/i18n"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
@@ -29,6 +30,56 @@ func SettingsMessage(lang i18n.Language) string {
 
 func LanguageMessage(lang i18n.Language) string {
 	return i18n.T(lang, i18n.KeyLanguageTitle)
+}
+
+func SetupMessage(lang i18n.Language, outcome string) string {
+	switch outcome {
+	case groups.OutcomeUpdated:
+		return i18n.T(lang, i18n.KeySetupAlready)
+	case groups.OutcomeReEnabled:
+		return i18n.T(lang, i18n.KeySetupReEnabled)
+	default:
+		return i18n.T(lang, i18n.KeySetupComplete)
+	}
+}
+
+func SetupGroupOnlyMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeySetupGroupOnly)
+}
+
+func SetupRequiredMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeySetupRequired)
+}
+
+func GroupsMessage(lang i18n.Language, configured []groups.ConfiguredGroup, fallbackChat int64) string {
+	var lines []string
+	lines = append(lines, i18n.T(lang, i18n.KeyGroupsHeader))
+	if len(configured) == 0 {
+		lines = append(lines, i18n.T(lang, i18n.KeyGroupsNone))
+		if fallbackChat != 0 {
+			lines = append(lines, fmt.Sprintf(i18n.T(lang, i18n.KeyGroupsFallback), fallbackChat))
+		}
+		return strings.Join(lines, "\n")
+	}
+	for _, group := range configured {
+		status := "disabled"
+		if group.Enabled {
+			status = "enabled"
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%d): %s", group.Title, group.TelegramChatID, status))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func DisableGroupMessage(lang i18n.Language, outcome string) string {
+	if outcome == groups.OutcomeAlreadyDisabled {
+		return i18n.T(lang, i18n.KeyGroupAlreadyDisabled)
+	}
+	return i18n.T(lang, i18n.KeyGroupDisabled)
+}
+
+func NoStoredGroupMessage(lang i18n.Language) string {
+	return i18n.T(lang, i18n.KeyGroupNoStored)
 }
 
 func ActionPromptMessage(lang i18n.Language, action string) string {

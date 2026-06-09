@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"work-status-bot/internal/groups"
 	"work-status-bot/internal/i18n"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/reports"
@@ -37,11 +38,14 @@ type CallbackQuery struct {
 }
 
 type User struct {
-	ID int64 `json:"id"`
+	ID       int64  `json:"id"`
+	Username string `json:"username,omitempty"`
 }
 
 type Chat struct {
-	ID int64 `json:"id"`
+	ID    int64  `json:"id"`
+	Type  string `json:"type,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
 type PeopleService interface {
@@ -59,6 +63,7 @@ type Handler struct {
 	people    PeopleService
 	work      WorkService
 	reports   *reports.Service
+	groups    *groups.Service
 	users     interface {
 		LookupLanguage(ctx context.Context, telegramUserID int64) (i18n.Language, error)
 		SetLanguage(ctx context.Context, telegramUserID int64, lang i18n.Language) (users.UserSetting, error)
@@ -105,7 +110,22 @@ func NewHandlerWithUsersAndLogger(groupChat int64, people PeopleService, work Wo
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Handler{groupChat: groupChat, people: people, work: work, reports: reportSvc, users: userSvc, telegram: tg, logger: log, now: func() time.Time { return time.Now().UTC() }}
+	return NewHandlerWithGroupsUsersAndLogger(groupChat, people, work, reportSvc, groups.NewService(nil, groupChat), userSvc, tg, log)
+}
+
+func NewHandlerWithGroupsUsersAndLogger(groupChat int64, people PeopleService, work WorkService, reportSvc *reports.Service, groupSvc *groups.Service, userSvc interface {
+	LookupLanguage(ctx context.Context, telegramUserID int64) (i18n.Language, error)
+	SetLanguage(ctx context.Context, telegramUserID int64, lang i18n.Language) (users.UserSetting, error)
+}, tg interface {
+	SendMessage(ctx context.Context, chatID int64, text string) error
+}, log *slog.Logger) *Handler {
+	if log == nil {
+		log = slog.Default()
+	}
+	if groupSvc == nil {
+		groupSvc = groups.NewService(nil, groupChat)
+	}
+	return &Handler{groupChat: groupChat, people: people, work: work, reports: reportSvc, groups: groupSvc, users: userSvc, telegram: tg, logger: log, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -130,12 +150,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	command := commandName(update.Message.Text)
 	h.logger.Info("telegram webhook received", "event", "telegram.webhook_received", "operation", "telegram", "chat_id", update.Message.Chat.ID, "user_id", userID, "command", command, "outcome", "received")
-	if update.Message.Chat.ID != h.groupChat {
-		h.logger.Warn("telegram chat rejected", "event", "telegram.chat_rejected", "operation", "telegram", "chat_id", update.Message.Chat.ID, "user_id", userID, "command", command, "outcome", "rejected")
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+	username := ""
+	if update.Message.From != nil {
+		username = update.Message.From.Username
 	}
-	response, err := h.HandleTextForUser(r.Context(), update.Message.Text, userID)
+	response, err := h.HandleTextForChat(r.Context(), update.Message.Text, userID, username, update.Message.Chat)
 	if err != nil {
 		h.logger.Error("telegram command result", "event", "telegram.command_result", "operation", "telegram", "chat_id", update.Message.Chat.ID, "user_id", userID, "command", command, "outcome", "failure", "error", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -143,17 +162,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if response != "" && h.telegram != nil {
 		if command == CommandHelp {
-			if err := h.sendMessageWithKeyboard(r.Context(), h.groupChat, response, MainMenuKeyboard(h.languageForUser(r.Context(), userID))); err != nil {
-				h.logger.Error("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", h.groupChat, "outcome", "failure", "error", err.Error())
+			if err := h.sendMessageWithKeyboard(r.Context(), update.Message.Chat.ID, response, MainMenuKeyboard(h.languageForUser(r.Context(), userID))); err != nil {
+				h.logger.Error("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", update.Message.Chat.ID, "outcome", "failure", "error", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-		} else if err := h.telegram.SendMessage(r.Context(), h.groupChat, response); err != nil {
-			h.logger.Error("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", h.groupChat, "outcome", "failure", "error", err.Error())
+		} else if err := h.telegram.SendMessage(r.Context(), update.Message.Chat.ID, response); err != nil {
+			h.logger.Error("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", update.Message.Chat.ID, "outcome", "failure", "error", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		h.logger.Info("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", h.groupChat, "outcome", "success")
+		h.logger.Info("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", update.Message.Chat.ID, "outcome", "success")
 	}
 	h.deleteCommandMessage(r.Context(), update.Message.Chat.ID, update.Message.MessageID, userID, command)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -164,20 +183,80 @@ func (h *Handler) HandleText(ctx context.Context, text string) (string, error) {
 }
 
 func (h *Handler) HandleTextForUser(ctx context.Context, text string, userID int64) (string, error) {
+	return h.handleText(ctx, text, userID, "", Chat{ID: h.groupChat, Type: "group"})
+}
+
+func (h *Handler) HandleTextForChat(ctx context.Context, text string, userID int64, username string, chat Chat) (string, error) {
+	return h.handleText(ctx, text, userID, username, chat)
+}
+
+func (h *Handler) handleText(ctx context.Context, text string, userID int64, username string, chat Chat) (string, error) {
 	lang := h.languageForUser(ctx, userID)
 	cmd, err := ParseCommand(text)
 	if err != nil {
 		h.logger.Warn("telegram command", "event", "telegram.command", "operation", "telegram", "command", commandName(text), "outcome", "invalid", "error", err.Error())
 		return ErrorMessageLang(lang, err), nil
 	}
-	h.logger.Info("telegram command", "event", "telegram.command", "operation", "telegram", "command", cmd.Name, "outcome", "received")
+	decision := h.authorize(ctx, chat, cmd.Name)
+	if !decision.Allowed {
+		h.logAuthorizationRejected(chat.ID, userID, cmd.Name, decision.Reason)
+		if decision.Reason == groups.ReasonPrivateChatSetup {
+			return SetupGroupOnlyMessage(lang), nil
+		}
+		return SetupRequiredMessage(lang), nil
+	}
+	h.logger.Info("telegram command", "event", "telegram.command", "operation", "telegram", "chat_id", chat.ID, "command", cmd.Name, "outcome", "received")
 	outcome := "success"
 	defer func() {
-		h.logger.Info("telegram command result", "event", "telegram.command_result", "operation", "telegram", "command", cmd.Name, "outcome", outcome)
+		h.logger.Info("telegram command result", "event", "telegram.command_result", "operation", "telegram", "chat_id", chat.ID, "command", cmd.Name, "outcome", outcome)
 	}()
 	switch cmd.Name {
 	case CommandHelp:
 		return HelpMessageLang(lang), nil
+	case CommandSetup:
+		if chat.Type == "private" {
+			outcome = "failure"
+			h.logGroupSetup(chat.ID, userID, "rejected", groups.ReasonPrivateChatSetup)
+			return SetupGroupOnlyMessage(lang), nil
+		}
+		h.logGroupSetup(chat.ID, userID, "attempt", "")
+		result, err := h.groups.Setup(ctx, groups.GroupSetupRequest{
+			TelegramChatID: chat.ID,
+			Title:          chat.Title,
+			SetupUserID:    userID,
+			SetupUsername:  username,
+			OccurredAt:     h.now(),
+		})
+		if err != nil {
+			outcome = "failure"
+			h.logGroupSetup(chat.ID, userID, "failure", err.Error())
+			return ErrorMessageLang(lang, err), nil
+		}
+		h.logGroupSetup(chat.ID, userID, result.Outcome, "")
+		return SetupMessage(lang, result.Outcome), nil
+	case CommandGroups:
+		configured, err := h.groups.ListAll(ctx)
+		if err != nil {
+			outcome = "failure"
+			h.logger.Error("telegram group list", "event", "telegram.group_list", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", "failure", "error", err.Error())
+			return "", err
+		}
+		h.logger.Info("telegram group list", "event", "telegram.group_list", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", "success", "group_count", len(configured))
+		return GroupsMessage(lang, configured, h.groupChat), nil
+	case CommandDisableGroup:
+		group, disableOutcome, err := h.groups.Disable(ctx, chat.ID)
+		if errors.Is(err, groups.ErrNotFound) {
+			h.logger.Warn("telegram group disable", "event", "telegram.group_disable", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", "rejected")
+			return NoStoredGroupMessage(lang), nil
+		}
+		if err != nil {
+			outcome = "failure"
+			h.logger.Error("telegram group disable", "event", "telegram.group_disable", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", "failure", "error", err.Error())
+			return "", err
+		}
+		_ = group
+		h.logger.Info("telegram group disable", "event", "telegram.group_disable", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", disableOutcome)
+		return DisableGroupMessage(lang, disableOutcome), nil
 	case CommandAddPerson:
 		p, err := h.people.Add(ctx, cmd.FirstName, cmd.LastName)
 		if err != nil {
@@ -217,9 +296,9 @@ func (h *Handler) HandleTextForUser(ctx context.Context, text string, userID int
 		}
 		warning := ""
 		if h.telegram != nil {
-			if err := h.telegram.SendMessage(ctx, h.groupChat, StopAlertMessage(p, record)); err != nil {
+			if err := h.telegram.SendMessage(ctx, chat.ID, StopAlertMessage(p, record)); err != nil {
 				warning = "alert delivery failed"
-				h.logger.Error("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", h.groupChat, "outcome", "failure", "error", err.Error())
+				h.logger.Error("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", chat.ID, "outcome", "failure", "error", err.Error())
 				if h.reports != nil {
 					if recErr := h.reports.RecordAlertFailed(ctx, p.ID, record.ID, err.Error(), h.now()); recErr != nil {
 						outcome = "failure"
@@ -227,7 +306,7 @@ func (h *Handler) HandleTextForUser(ctx context.Context, text string, userID int
 					}
 				}
 			} else {
-				h.logger.Info("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", h.groupChat, "outcome", "success")
+				h.logger.Info("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", chat.ID, "outcome", "success")
 			}
 		}
 		return WorkStoppedMessageLang(lang, p, record, warning), nil
@@ -240,6 +319,13 @@ func (h *Handler) HandleTextForUser(ctx context.Context, text string, userID int
 		if err != nil {
 			outcome = "failure"
 			return ErrorMessageLang(lang, err), nil
+		}
+		if h.telegram != nil {
+			if err := h.telegram.SendMessage(ctx, chat.ID, ReportMessage(result)); err != nil {
+				outcome = "failure"
+				return "", err
+			}
+			return "", nil
 		}
 		return ReportMessage(result), nil
 	default:
@@ -261,21 +347,34 @@ func (h *Handler) handleCallbackHTTP(w http.ResponseWriter, r *http.Request, cb 
 	}
 	action := cb.Data
 	h.logger.Info("telegram callback received", "event", "telegram.callback_received", "operation", "telegram", "chat_id", chatID, "user_id", userID, "callback_action", action, "outcome", "received")
-	if chatID != h.groupChat {
-		_ = h.answerCallback(r.Context(), cb.ID, "", userID, action)
-		h.logger.Warn("telegram chat rejected", "event", "telegram.chat_rejected", "operation", "telegram", "chat_id", chatID, "user_id", userID, "callback_action", action, "outcome", "rejected")
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
 	lang := h.languageForUser(r.Context(), userID)
 	answerErr := h.answerCallback(r.Context(), cb.ID, "", userID, action)
-	text, keyboard, outcome, err := h.HandleCallback(r.Context(), action, userID, messageID)
+	command := commandForCallback(action)
+	decision := h.authorize(r.Context(), Chat{ID: chatID, Type: chatTypeFromID(chatID)}, command)
+	if !decision.Allowed {
+		h.logAuthorizationRejected(chatID, userID, command, decision.Reason)
+		if h.telegram != nil {
+			if err := h.telegram.SendMessage(r.Context(), chatID, SetupRequiredMessage(lang)); err != nil {
+				h.logger.Error("telegram callback result", "event", "telegram.callback_result", "operation", "telegram", "chat_id", chatID, "user_id", userID, "callback_action", action, "outcome", "failure", "error", err.Error())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		outcome := "success"
+		if answerErr != nil {
+			outcome = "failure"
+		}
+		h.logger.Info("telegram callback result", "event", "telegram.callback_result", "operation", "telegram", "chat_id", chatID, "user_id", userID, "callback_action", action, "outcome", outcome)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	text, keyboard, outcome, err := h.HandleCallbackForChat(r.Context(), action, userID, messageID, chatID)
 	if err != nil {
 		outcome = "failure"
 		text = ErrorMessageLang(lang, err)
 	}
 	if text != "" && h.telegram != nil {
-		if err := h.sendMessageWithKeyboard(r.Context(), h.groupChat, text, keyboard); err != nil {
+		if err := h.sendMessageWithKeyboard(r.Context(), chatID, text, keyboard); err != nil {
 			h.logger.Error("telegram callback result", "event", "telegram.callback_result", "operation", "telegram", "chat_id", chatID, "user_id", userID, "callback_action", action, "outcome", "failure", "error", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -289,6 +388,10 @@ func (h *Handler) handleCallbackHTTP(w http.ResponseWriter, r *http.Request, cb 
 }
 
 func (h *Handler) HandleCallback(ctx context.Context, action string, userID int64, messageID int) (string, *InlineKeyboardMarkup, string, error) {
+	return h.HandleCallbackForChat(ctx, action, userID, messageID, h.groupChat)
+}
+
+func (h *Handler) HandleCallbackForChat(ctx context.Context, action string, userID int64, messageID int, chatID int64) (string, *InlineKeyboardMarkup, string, error) {
 	lang := h.languageForUser(ctx, userID)
 	switch action {
 	case CallbackMenuHelp:
@@ -321,6 +424,53 @@ func (h *Handler) HandleCallback(ctx context.Context, action string, userID int6
 	default:
 		return i18n.T(lang, i18n.KeyUnsupportedAction), nil, "unsupported", nil
 	}
+}
+
+func (h *Handler) authorize(ctx context.Context, chat Chat, command string) groups.GroupAuthorizationDecision {
+	if h.groups == nil {
+		if h.groupChat != 0 && chat.ID == h.groupChat {
+			return groups.GroupAuthorizationDecision{ChatID: chat.ID, Command: command, Allowed: true, Reason: groups.ReasonFallback}
+		}
+		return groups.GroupAuthorizationDecision{ChatID: chat.ID, Command: command, Reason: groups.ReasonUnknownGroup}
+	}
+	return h.groups.Authorize(ctx, chat.ID, chat.Type, command)
+}
+
+func (h *Handler) logAuthorizationRejected(chatID, userID int64, command, reason string) {
+	h.logger.Warn("telegram group authorization", "event", "telegram.group_authorization", "operation", "telegram", "chat_id", chatID, "user_id", userID, "command", command, "outcome", "rejected", "reason", reason)
+}
+
+func (h *Handler) logGroupSetup(chatID, userID int64, outcome, reason string) {
+	attrs := []any{"event", "telegram.group_setup", "operation", "telegram", "chat_id", chatID, "user_id", userID, "outcome", outcome}
+	if reason != "" {
+		attrs = append(attrs, "reason", reason)
+	}
+	h.logger.Info("telegram group setup", attrs...)
+}
+
+func commandForCallback(action string) string {
+	switch action {
+	case CallbackMenuAddPerson:
+		return CommandAddPerson
+	case CallbackMenuStartWork:
+		return CommandStartWork
+	case CallbackMenuStatus:
+		return CommandStatus
+	case CallbackMenuStopWork:
+		return CommandStopWork
+	case CallbackMenuReportMonth:
+		return CommandReportMonth
+	case CallbackMenuHelp:
+		return CommandHelp
+	case CallbackMenuSettings, CallbackSettingsLanguage, CallbackLanguageUK, CallbackLanguageEN, CallbackLanguageRU:
+		return "/settings"
+	default:
+		return "/callback"
+	}
+}
+
+func chatTypeFromID(chatID int64) string {
+	return ""
 }
 
 func (h *Handler) languageForUser(ctx context.Context, userID int64) i18n.Language {

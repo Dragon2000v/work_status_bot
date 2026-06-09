@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"work-status-bot/internal/groups"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/works"
 
@@ -81,6 +82,17 @@ func (r *memReportsRepo) FindMonthlyReport(ctx context.Context, month string) (M
 
 type reportWorkLister struct{ records []works.WorkRecord }
 
+type recordingTelegram struct {
+	chats []int64
+	texts []string
+}
+
+func (t *recordingTelegram) SendMessage(ctx context.Context, chatID int64, text string) error {
+	t.chats = append(t.chats, chatID)
+	t.texts = append(t.texts, text)
+	return nil
+}
+
 func (l reportWorkLister) ListOverlappingMonth(ctx context.Context, month string) ([]works.WorkRecord, error) {
 	start, end, _ := works.MonthBoundsKyiv(month)
 	var out []works.WorkRecord
@@ -145,3 +157,25 @@ func TestReportsServiceMonthlyOverlapAndDuplicate(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+func TestReportsServiceSendsReportToChatAndTargets(t *testing.T) {
+	tg := &recordingTelegram{}
+	svc := NewService(newMemReportsRepo(), newReportPeopleRepo(), reportWorkLister{}, tg, 10)
+	report := MonthlyReport{Month: "2026-06", Content: "report body"}
+	if err := svc.SendReportToChat(context.Background(), -1001, report, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(tg.chats) != 1 || tg.chats[0] != -1001 || tg.texts[0] != "report body" {
+		t.Fatalf("manual report target wrong: chats=%v texts=%v", tg.chats, tg.texts)
+	}
+	targets := []groups.ReportDeliveryTarget{{TelegramChatID: -1002}, {TelegramChatID: 10}}
+	if err := svc.SendReportToTargets(context.Background(), report, true, targets); err != nil {
+		t.Fatal(err)
+	}
+	if len(tg.chats) != 3 || tg.chats[1] != -1002 || tg.chats[2] != 10 {
+		t.Fatalf("fan-out targets wrong: chats=%v", tg.chats)
+	}
+	if !strings.Contains(tg.texts[1], "Звіт уже існує") {
+		t.Fatalf("duplicate prefix missing: %q", tg.texts[1])
+	}
+}

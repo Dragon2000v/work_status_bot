@@ -30,8 +30,8 @@ func TestTelegramWebhookLogging(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"message":{"text":"/help","from":{"id":78},"chat":{"id":11}}}`)))
-	if res.Code != http.StatusForbidden {
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"message":{"text":"/status","from":{"id":78},"chat":{"id":11}}}`)))
+	if res.Code != http.StatusOK {
 		t.Fatalf("status %d", res.Code)
 	}
 
@@ -42,7 +42,7 @@ func TestTelegramWebhookLogging(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{`"event":"telegram.webhook_received"`, `"event":"telegram.chat_rejected"`, `"chat_id":10`, `"chat_id":11`, `"user_id":77`, `"command":"/help"`, `"outcome":"rejected"`, `"outcome":"invalid"`} {
+	for _, want := range []string{`"event":"telegram.webhook_received"`, `"event":"telegram.group_authorization"`, `"chat_id":10`, `"chat_id":11`, `"user_id":77`, `"command":"/help"`, `"command":"/status"`, `"outcome":"rejected"`, `"outcome":"invalid"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %s in %s", want, out)
 		}

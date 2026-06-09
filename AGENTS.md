@@ -18,5 +18,5 @@ All elapsed time must be calculated from stored timestamps.
 Do not add a web UI in MVP.
 
 <!-- SPECKIT START -->
-Active Spec Kit plan: specs/003-telegram-buttons-languages/plan.md
+Active Spec Kit plan: specs/004-multi-group-setup/plan.md
 <!-- SPECKIT END -->
