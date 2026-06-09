@@ -40,10 +40,13 @@ func TestClientAdditionalBotAPIPayloads(t *testing.T) {
 	if err := client.DeleteMessage(context.Background(), 10, 55); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.SetMyCommands(context.Background(), NativeBotCommands()); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.EditMessageText(context.Background(), 10, 56, "edit", keyboard); err != nil {
 		t.Fatal(err)
 	}
-	wantPaths := []string{"/botsecret-token/sendMessage", "/botsecret-token/answerCallbackQuery", "/botsecret-token/deleteMessage", "/botsecret-token/editMessageText"}
+	wantPaths := []string{"/botsecret-token/sendMessage", "/botsecret-token/answerCallbackQuery", "/botsecret-token/deleteMessage", "/botsecret-token/setMyCommands", "/botsecret-token/editMessageText"}
 	for i := range wantPaths {
 		if paths[i] != wantPaths[i] {
 			t.Fatalf("path %d = %s", i, paths[i])
@@ -58,8 +61,11 @@ func TestClientAdditionalBotAPIPayloads(t *testing.T) {
 	if bodies[2]["message_id"].(float64) != 55 {
 		t.Fatalf("delete body: %#v", bodies[2])
 	}
-	if _, ok := bodies[3]["reply_markup"]; !ok {
-		t.Fatalf("edit missing keyboard: %#v", bodies[3])
+	if len(bodies[3]["commands"].([]any)) != 9 {
+		t.Fatalf("commands body: %#v", bodies[3])
+	}
+	if _, ok := bodies[4]["reply_markup"]; !ok {
+		t.Fatalf("edit missing keyboard: %#v", bodies[4])
 	}
 }
 

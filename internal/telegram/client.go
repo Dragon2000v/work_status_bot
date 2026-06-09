@@ -26,6 +26,22 @@ type InlineKeyboardButton struct {
 	CallbackData string `json:"callback_data"`
 }
 
+type ReplyKeyboardMarkup struct {
+	Keyboard        [][]KeyboardButton `json:"keyboard"`
+	ResizeKeyboard  bool               `json:"resize_keyboard"`
+	OneTimeKeyboard bool               `json:"one_time_keyboard"`
+	IsPersistent    bool               `json:"is_persistent,omitempty"`
+}
+
+type KeyboardButton struct {
+	Text string `json:"text"`
+}
+
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
 func NewClient(token string, httpClient *http.Client) *Client {
 	return NewClientWithLogger(token, httpClient, slog.Default())
 }
@@ -44,7 +60,7 @@ func (c *Client) SendMessage(ctx context.Context, chatID int64, text string) err
 	return c.SendMessageWithKeyboard(ctx, chatID, text, nil)
 }
 
-func (c *Client) SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
+func (c *Client) SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard any) error {
 	payload := map[string]any{"chat_id": chatID, "text": text}
 	if keyboard != nil {
 		payload["reply_markup"] = keyboard
@@ -74,6 +90,19 @@ func (c *Client) DeleteMessage(ctx context.Context, chatID int64, messageID int)
 		return err
 	}
 	return c.postJSON(ctx, "deleteMessage", body, "telegram.command_delete", "telegram_send", "chat_id", chatID, "message_id", messageID)
+}
+
+func (c *Client) SetMyCommands(ctx context.Context, commands []BotCommand) error {
+	c.logger.Info("telegram command menu registration", "event", "telegram.command_menu_registration", "operation", "telegram_command_menu", "outcome", "attempt", "command_count", len(commands))
+	body, err := json.Marshal(map[string]any{"commands": commands})
+	if err != nil {
+		c.logger.Error("telegram command menu registration", "event", "telegram.command_menu_registration", "operation", "telegram_command_menu", "outcome", "failure", "error", err.Error())
+		return err
+	}
+	if err := c.postJSON(ctx, "setMyCommands", body, "telegram.command_menu_registration", "telegram_command_menu", "command_count", len(commands)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Client) EditMessageText(ctx context.Context, chatID int64, messageID int, text string, keyboard *InlineKeyboardMarkup) error {

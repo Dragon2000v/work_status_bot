@@ -1,10 +1,12 @@
 package telegram
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"work-status-bot/internal/datetime"
 	"work-status-bot/internal/groups"
 	"work-status-bot/internal/i18n"
 	"work-status-bot/internal/people"
@@ -182,4 +184,11 @@ func ErrorMessageLang(lang i18n.Language, err error) string {
 		return i18n.T(lang, i18n.KeyGenericError) + ": " + i18n.T(lang, i18n.KeyMalformedCommand)
 	}
 	return i18n.T(lang, i18n.KeyGenericError) + ": " + err.Error()
+}
+
+func DateTimeErrorMessage(lang i18n.Language, err error) string {
+	if errors.Is(err, datetime.ErrFutureTime) {
+		return i18n.T(lang, i18n.KeyDateTimeFuture)
+	}
+	return i18n.T(lang, i18n.KeyDateTimeInvalid)
 }

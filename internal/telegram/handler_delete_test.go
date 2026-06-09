@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"work-status-bot/internal/flows"
 	applogger "work-status-bot/internal/logger"
 )
 
@@ -37,5 +39,26 @@ func TestCommandDeleteFailureLoggedAndCommandSucceeds(t *testing.T) {
 	out := logs.String()
 	if !strings.Contains(out, `"event":"telegram.command_delete"`) || !strings.Contains(out, `"outcome":"failure"`) {
 		t.Fatalf("missing delete failure log: %s", out)
+	}
+}
+
+func TestReplyKeyboardAndFlowInputDeleteBestEffort(t *testing.T) {
+	tg := &fullTelegram{}
+	handler := newCallbackHandler(tg)
+	flowRepo := &telegramFlowRepo{}
+	flowSvc := flows.NewService(flowRepo)
+	flowSvc.SetNow(func() time.Time { return time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC) })
+	handler.SetFlows(flowSvc)
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"message":{"message_id":56,"text":"Додати людину","from":{"id":77},"chat":{"id":10,"type":"group"}}}`)))
+	if res.Code != http.StatusOK || len(tg.deletes) != 1 || tg.deletes[0] != 56 {
+		t.Fatalf("keyboard delete missing code=%d deletes=%v", res.Code, tg.deletes)
+	}
+
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"message":{"message_id":57,"text":"Олена Шевченко","from":{"id":77},"chat":{"id":10,"type":"group"}}}`)))
+	if res.Code != http.StatusOK || len(tg.deletes) != 2 || tg.deletes[1] != 57 {
+		t.Fatalf("flow input delete missing code=%d deletes=%v", res.Code, tg.deletes)
 	}
 }

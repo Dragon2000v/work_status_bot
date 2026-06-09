@@ -31,6 +31,10 @@ func (s *Service) SetNow(now func() time.Time) {
 }
 
 func (s *Service) Start(ctx context.Context, firstName, lastName, title string) (people.Person, WorkRecord, error) {
+	return s.StartAt(ctx, firstName, lastName, title, s.now())
+}
+
+func (s *Service) StartAt(ctx context.Context, firstName, lastName, title string, startedAt time.Time) (people.Person, WorkRecord, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return people.Person{}, WorkRecord{}, ErrMissingTitle
@@ -45,9 +49,10 @@ func (s *Service) Start(ctx context.Context, firstName, lastName, title string) 
 		return people.Person{}, WorkRecord{}, err
 	}
 	now := s.now().UTC()
+	startedAt = startedAt.UTC()
 	record := WorkRecord{
 		ID: primitive.NewObjectID(), PersonID: person.ID, Title: title, Status: StatusActive,
-		StartedAt: now, CreatedAt: now, UpdatedAt: now,
+		StartedAt: startedAt, CreatedAt: now, UpdatedAt: now,
 	}
 	record, err = s.works.CreateActive(ctx, record)
 	return person, record, err

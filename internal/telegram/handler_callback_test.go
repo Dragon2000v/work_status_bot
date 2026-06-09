@@ -19,7 +19,7 @@ import (
 
 type fullTelegram struct {
 	messages     []string
-	keyboards    []*InlineKeyboardMarkup
+	keyboards    []any
 	answers      []string
 	deletes      []int
 	failAnswer   bool
@@ -32,7 +32,7 @@ func (t *fullTelegram) SendMessage(ctx context.Context, chatID int64, text strin
 	return nil
 }
 
-func (t *fullTelegram) SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
+func (t *fullTelegram) SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard any) error {
 	t.messages = append(t.messages, text)
 	t.keyboards = append(t.keyboards, keyboard)
 	return nil

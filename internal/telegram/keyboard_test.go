@@ -6,23 +6,26 @@ import (
 	"work-status-bot/internal/i18n"
 )
 
-func TestMainMenuKeyboardUkrainianLabelsAndCallbacks(t *testing.T) {
+func TestMainMenuKeyboardUkrainianReplyKeyboard(t *testing.T) {
 	kb := MainMenuKeyboard(i18n.Ukrainian)
-	want := map[string]string{
-		CallbackMenuAddPerson:   "Додати людину",
-		CallbackMenuStartWork:   "Почати роботу",
-		CallbackMenuStatus:      "Статус",
-		CallbackMenuStopWork:    "Зупинити роботу",
-		CallbackMenuReportMonth: "Місячний звіт",
-		CallbackMenuSettings:    "Налаштування",
-		CallbackMenuHelp:        "Допомога",
+	if !kb.ResizeKeyboard || kb.OneTimeKeyboard || !kb.IsPersistent {
+		t.Fatalf("bad reply keyboard flags: %#v", kb)
 	}
-	for _, row := range kb.InlineKeyboard {
+	want := map[string]bool{
+		"Додати людину":   true,
+		"Почати роботу":   true,
+		"Статус":          true,
+		"Зупинити роботу": true,
+		"Місячний звіт":   true,
+		"Налаштування":    true,
+		"Допомога":        true,
+	}
+	for _, row := range kb.Keyboard {
 		for _, btn := range row {
-			if want[btn.CallbackData] != btn.Text {
-				t.Fatalf("button %s = %q", btn.CallbackData, btn.Text)
+			if !want[btn.Text] {
+				t.Fatalf("unexpected button %q", btn.Text)
 			}
-			delete(want, btn.CallbackData)
+			delete(want, btn.Text)
 		}
 	}
 	if len(want) != 0 {
@@ -32,15 +35,22 @@ func TestMainMenuKeyboardUkrainianLabelsAndCallbacks(t *testing.T) {
 
 func TestSettingsAndLanguageKeyboardLabels(t *testing.T) {
 	settings := SettingsKeyboard(i18n.English)
-	if got := settings.InlineKeyboard[0][0].Text; got != "🌐 Мова / Language / Язык" {
+	if got := settings.Keyboard[0][0].Text; got != "🌐 Мова / Language / Язык" {
 		t.Fatalf("settings label = %q", got)
 	}
 	langs := LanguageKeyboard(i18n.Russian)
-	got := []string{langs.InlineKeyboard[0][0].Text, langs.InlineKeyboard[1][0].Text, langs.InlineKeyboard[2][0].Text}
+	got := []string{langs.Keyboard[0][0].Text, langs.Keyboard[1][0].Text, langs.Keyboard[2][0].Text}
 	want := []string{"Українська", "English", "Русский"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("lang %d = %q", i, got[i])
 		}
+	}
+}
+
+func TestInlineLanguageKeyboardStillSupportsCallbacks(t *testing.T) {
+	langs := InlineLanguageKeyboard(i18n.Ukrainian)
+	if got := langs.InlineKeyboard[0][0].CallbackData; got != CallbackLanguageUK {
+		t.Fatalf("callback = %q", got)
 	}
 }

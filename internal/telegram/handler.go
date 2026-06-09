@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"work-status-bot/internal/datetime"
+	"work-status-bot/internal/flows"
 	"work-status-bot/internal/groups"
 	"work-status-bot/internal/i18n"
 	"work-status-bot/internal/people"
@@ -58,6 +60,18 @@ type WorkService interface {
 	Stop(ctx context.Context, firstName, lastName, reason string) (people.Person, works.WorkRecord, error)
 }
 
+type WorkStartAtService interface {
+	StartAt(ctx context.Context, firstName, lastName, title string, startedAt time.Time) (people.Person, works.WorkRecord, error)
+}
+
+type FlowService interface {
+	Start(ctx context.Context, userID, chatID int64, flowType, step string, payload map[string]string) (flows.State, error)
+	Get(ctx context.Context, userID, chatID int64) (flows.State, error)
+	Advance(ctx context.Context, state flows.State, step string, payload map[string]string) (flows.State, error)
+	Complete(ctx context.Context, userID, chatID int64) error
+	Cancel(ctx context.Context, userID, chatID int64) error
+}
+
 type Handler struct {
 	groupChat int64
 	people    PeopleService
@@ -68,6 +82,7 @@ type Handler struct {
 		LookupLanguage(ctx context.Context, telegramUserID int64) (i18n.Language, error)
 		SetLanguage(ctx context.Context, telegramUserID int64, lang i18n.Language) (users.UserSetting, error)
 	}
+	flows    FlowService
 	telegram telegramAPI
 	logger   *slog.Logger
 	now      func() time.Time
@@ -78,7 +93,7 @@ type telegramAPI interface {
 }
 
 type keyboardSender interface {
-	SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error
+	SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard any) error
 }
 
 type callbackAnswerer interface {
@@ -128,6 +143,10 @@ func NewHandlerWithGroupsUsersAndLogger(groupChat int64, people PeopleService, w
 	return &Handler{groupChat: groupChat, people: people, work: work, reports: reportSvc, groups: groupSvc, users: userSvc, telegram: tg, logger: log, now: func() time.Time { return time.Now().UTC() }}
 }
 
+func (h *Handler) SetFlows(flowSvc FlowService) {
+	h.flows = flowSvc
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var update Update
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -154,6 +173,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if update.Message.From != nil {
 		username = update.Message.From.Username
 	}
+	messageKind := h.cleanupKind(r.Context(), update.Message.Text, userID, update.Message.Chat.ID)
 	response, err := h.HandleTextForChat(r.Context(), update.Message.Text, userID, username, update.Message.Chat)
 	if err != nil {
 		h.logger.Error("telegram command result", "event", "telegram.command_result", "operation", "telegram", "chat_id", update.Message.Chat.ID, "user_id", userID, "command", command, "outcome", "failure", "error", err.Error())
@@ -161,8 +181,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if response != "" && h.telegram != nil {
-		if command == CommandHelp {
-			if err := h.sendMessageWithKeyboard(r.Context(), update.Message.Chat.ID, response, MainMenuKeyboard(h.languageForUser(r.Context(), userID))); err != nil {
+		lang := h.languageForUser(r.Context(), userID)
+		if keyboard := h.keyboardForResponse(response, lang); keyboard != nil {
+			if err := h.sendMessageWithKeyboard(r.Context(), update.Message.Chat.ID, response, keyboard); err != nil {
 				h.logger.Error("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", update.Message.Chat.ID, "outcome", "failure", "error", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -174,7 +195,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Info("telegram send", "event", "telegram.send", "operation", "telegram_send", "chat_id", update.Message.Chat.ID, "outcome", "success")
 	}
-	h.deleteCommandMessage(r.Context(), update.Message.Chat.ID, update.Message.MessageID, userID, command)
+	h.cleanupUserMessage(r.Context(), update.Message.Chat.ID, update.Message.MessageID, userID, command, messageKind)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -192,6 +213,20 @@ func (h *Handler) HandleTextForChat(ctx context.Context, text string, userID int
 
 func (h *Handler) handleText(ctx context.Context, text string, userID int64, username string, chat Chat) (string, error) {
 	lang := h.languageForUser(ctx, userID)
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "/") {
+		if response, handled, err := h.handleActiveFlow(ctx, trimmed, userID, chat, lang); handled || err != nil {
+			return response, err
+		}
+		if action, ok := CommandForKeyboardText(trimmed); ok {
+			h.logger.Info("telegram reply keyboard action", "event", "telegram.reply_keyboard_action", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "action", action, "outcome", "received")
+			return h.handleCanonicalAction(ctx, action, userID, chat, lang)
+		}
+		return i18n.T(lang, i18n.KeyUnsupportedAction), nil
+	}
+	if response, handled, err := h.handleBareFlowCommand(ctx, trimmed, userID, chat, lang); handled || err != nil {
+		return response, err
+	}
 	cmd, err := ParseCommand(text)
 	if err != nil {
 		h.logger.Warn("telegram command", "event", "telegram.command", "operation", "telegram", "command", commandName(text), "outcome", "invalid", "error", err.Error())
@@ -395,11 +430,11 @@ func (h *Handler) HandleCallbackForChat(ctx context.Context, action string, user
 	lang := h.languageForUser(ctx, userID)
 	switch action {
 	case CallbackMenuHelp:
-		return HelpMessageLang(lang), MainMenuKeyboard(lang), "success", nil
+		return HelpMessageLang(lang), nil, "success", nil
 	case CallbackMenuSettings:
-		return SettingsMessage(lang), SettingsKeyboard(lang), "success", nil
+		return SettingsMessage(lang), InlineSettingsKeyboard(lang), "success", nil
 	case CallbackSettingsLanguage:
-		return LanguageMessage(lang), LanguageKeyboard(lang), "success", nil
+		return LanguageMessage(lang), InlineLanguageKeyboard(lang), "success", nil
 	case CallbackMenuStatus:
 		persons, records, err := h.work.Status(ctx)
 		if err != nil {
@@ -420,9 +455,280 @@ func (h *Handler) HandleCallbackForChat(ctx context.Context, action string, user
 			}
 		}
 		h.logger.Info("telegram user language changed", "event", "telegram.user_language_changed", "operation", "telegram", "user_id", userID, "language", selected, "outcome", "success")
-		return i18n.T(selected, i18n.KeyLanguageChanged), MainMenuKeyboard(selected), "success", nil
+		return i18n.T(selected, i18n.KeyLanguageChanged), nil, "success", nil
 	default:
 		return i18n.T(lang, i18n.KeyUnsupportedAction), nil, "unsupported", nil
+	}
+}
+
+func (h *Handler) handleCanonicalAction(ctx context.Context, action string, userID int64, chat Chat, lang i18n.Language) (string, error) {
+	decision := h.authorize(ctx, chat, action)
+	if !decision.Allowed {
+		h.logAuthorizationRejected(chat.ID, userID, action, decision.Reason)
+		if decision.Reason == groups.ReasonPrivateChatSetup {
+			return SetupGroupOnlyMessage(lang), nil
+		}
+		return SetupRequiredMessage(lang), nil
+	}
+	switch action {
+	case CommandAddPerson:
+		return h.startFlow(ctx, userID, chat.ID, flows.TypeAddPerson, flows.StepAddPersonEnterName, nil, i18n.T(lang, i18n.KeyAddPersonEnterName))
+	case CommandStartWork:
+		return h.startFlow(ctx, userID, chat.ID, flows.TypeStartWork, flows.StepStartWorkEnterPerson, nil, i18n.T(lang, i18n.KeyStartWorkEnterPerson))
+	case CommandStopWork:
+		return h.startFlow(ctx, userID, chat.ID, flows.TypeStopWork, flows.StepStopWorkEnterPersonOrReason, nil, i18n.T(lang, i18n.KeyStopWorkEnterInput))
+	case "/settings":
+		return h.startFlow(ctx, userID, chat.ID, flows.TypeSettings, flows.StepSettingsLanguageSelect, nil, LanguageMessage(lang))
+	case CommandHelp:
+		return HelpMessageLang(lang), nil
+	case CommandStatus:
+		persons, records, err := h.work.Status(ctx)
+		if err != nil {
+			return "", err
+		}
+		return StatusMessageLang(i18n.Ukrainian, persons, records, h.now()), nil
+	case CommandReportMonth:
+		if h.reports == nil {
+			return "", errors.New("reports service not configured")
+		}
+		result, err := h.reports.GenerateMonthly(ctx, "", reports.TriggerTelegramCommand)
+		if err != nil {
+			return ErrorMessageLang(lang, err), nil
+		}
+		if h.telegram != nil {
+			if err := h.telegram.SendMessage(ctx, chat.ID, ReportMessage(result)); err != nil {
+				return "", err
+			}
+			return "", nil
+		}
+		return ReportMessage(result), nil
+	default:
+		return i18n.T(lang, i18n.KeyUnsupportedAction), nil
+	}
+}
+
+func (h *Handler) handleBareFlowCommand(ctx context.Context, text string, userID int64, chat Chat, lang i18n.Language) (string, bool, error) {
+	fields := splitCommand(text)
+	if len(fields) != 1 {
+		return "", false, nil
+	}
+	action := normalizeCommandName(fields[0])
+	switch action {
+	case CommandAddPerson, CommandStartWork, CommandStopWork:
+		response, err := h.handleCanonicalAction(ctx, action, userID, chat, lang)
+		return response, true, err
+	default:
+		return "", false, nil
+	}
+}
+
+func (h *Handler) startFlow(ctx context.Context, userID, chatID int64, flowType, step string, payload map[string]string, response string) (string, error) {
+	if h.flows == nil {
+		return response, nil
+	}
+	if _, err := h.flows.Start(ctx, userID, chatID, flowType, step, payload); err != nil {
+		return "", err
+	}
+	h.logger.Info("telegram flow started", "event", "telegram.flow_started", "operation", "telegram", "chat_id", chatID, "user_id", userID, "flow_type", flowType, "step", step, "outcome", "success")
+	return response, nil
+}
+
+func (h *Handler) handleActiveFlow(ctx context.Context, text string, userID int64, chat Chat, lang i18n.Language) (string, bool, error) {
+	if h.flows == nil {
+		return "", false, nil
+	}
+	state, err := h.flows.Get(ctx, userID, chat.ID)
+	if errors.Is(err, flows.ErrNotFound) {
+		return "", false, nil
+	}
+	if errors.Is(err, flows.ErrExpired) {
+		h.logger.Info("telegram flow expired", "event", "telegram.flow_expired", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "outcome", "expired")
+		return i18n.T(lang, i18n.KeyFlowExpired), true, nil
+	}
+	if err != nil {
+		return "", true, err
+	}
+	if isCancelText(text) {
+		_ = h.flows.Cancel(ctx, userID, chat.ID)
+		h.logger.Info("telegram flow cancelled", "event", "telegram.flow_cancelled", "operation", "telegram", "chat_id", chat.ID, "user_id", userID, "flow_type", state.FlowType, "outcome", "success")
+		return i18n.T(lang, i18n.KeyFlowCancelled), true, nil
+	}
+	switch state.Step {
+	case flows.StepAddPersonEnterName:
+		return h.handleAddPersonFlow(ctx, state, text, lang)
+	case flows.StepStopWorkEnterPersonOrReason:
+		return h.handleStopWorkFlow(ctx, state, text, chat, lang)
+	case flows.StepSettingsLanguageSelect:
+		return h.handleSettingsFlow(ctx, state, text, lang)
+	case flows.StepStartWorkEnterPerson, flows.StepStartWorkEnterTitle, flows.StepStartWorkSelectTimeMode, flows.StepStartWorkEnterTime, flows.StepStartWorkEnterManualDateTime:
+		return h.handleStartWorkFlow(ctx, state, text, lang)
+	default:
+		return i18n.T(lang, i18n.KeyUnsupportedAction), true, nil
+	}
+}
+
+func (h *Handler) handleAddPersonFlow(ctx context.Context, state flows.State, text string, lang i18n.Language) (string, bool, error) {
+	first, last, _, ok := parseNameAndRest(text)
+	if !ok {
+		return i18n.T(lang, i18n.KeyAddPersonInvalidName), true, nil
+	}
+	p, err := h.people.Add(ctx, first, last)
+	if err != nil {
+		return ErrorMessageLang(lang, err), true, nil
+	}
+	_ = h.flows.Complete(ctx, state.TelegramUserID, state.ChatID)
+	h.logger.Info("telegram flow completed", "event", "telegram.flow_completed", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "outcome", "success")
+	return PersonAddedMessageLang(lang, p), true, nil
+}
+
+func (h *Handler) handleStopWorkFlow(ctx context.Context, state flows.State, text string, chat Chat, lang i18n.Language) (string, bool, error) {
+	first, last, reason, ok := parseNameAndRest(text)
+	if !ok {
+		return i18n.T(lang, i18n.KeyAddPersonInvalidName), true, nil
+	}
+	cmd := Command{Name: CommandStopWork, FirstName: first, LastName: last, Reason: reason}
+	outcome := "success"
+	response, err := h.executeFlowCommand(ctx, cmd, chat, lang, &outcome)
+	if err == nil && outcome == "success" {
+		_ = h.flows.Complete(ctx, state.TelegramUserID, state.ChatID)
+		h.logger.Info("telegram flow completed", "event", "telegram.flow_completed", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "outcome", "success")
+	}
+	return response, true, err
+}
+
+func (h *Handler) handleSettingsFlow(ctx context.Context, state flows.State, text string, lang i18n.Language) (string, bool, error) {
+	if isBackText(text) {
+		return SettingsMessage(lang), true, nil
+	}
+	selected, ok := languageFromText(text)
+	if !ok {
+		return LanguageMessage(lang), true, nil
+	}
+	if h.users != nil {
+		if _, err := h.users.SetLanguage(ctx, state.TelegramUserID, selected); err != nil {
+			h.logger.Error("telegram user language changed", "event", "telegram.user_language_changed", "operation", "telegram", "user_id", state.TelegramUserID, "language", selected, "outcome", "failure", "error", err.Error())
+			return "", true, err
+		}
+	}
+	_ = h.flows.Complete(ctx, state.TelegramUserID, state.ChatID)
+	h.logger.Info("telegram user language changed", "event", "telegram.user_language_changed", "operation", "telegram", "user_id", state.TelegramUserID, "language", selected, "outcome", "success")
+	return i18n.T(selected, i18n.KeyLanguageChanged), true, nil
+}
+
+func (h *Handler) handleStartWorkFlow(ctx context.Context, state flows.State, text string, lang i18n.Language) (string, bool, error) {
+	payload := state.Payload
+	if payload == nil {
+		payload = map[string]string{}
+	}
+	switch state.Step {
+	case flows.StepStartWorkEnterPerson:
+		first, last, _, ok := parseNameAndRest(text)
+		if !ok {
+			return i18n.T(lang, i18n.KeyAddPersonInvalidName), true, nil
+		}
+		payload["first_name"], payload["last_name"] = first, last
+		if _, err := h.flows.Advance(ctx, state, flows.StepStartWorkEnterTitle, payload); err != nil {
+			return "", true, err
+		}
+		h.logger.Info("telegram flow step advanced", "event", "telegram.flow_step_advanced", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "step", flows.StepStartWorkEnterTitle, "outcome", "success")
+		return i18n.T(lang, i18n.KeyStartWorkEnterTitle), true, nil
+	case flows.StepStartWorkEnterTitle:
+		title := strings.TrimSpace(text)
+		if title == "" {
+			return i18n.T(lang, i18n.KeyStartWorkEnterTitle), true, nil
+		}
+		payload["title"] = title
+		if _, err := h.flows.Advance(ctx, state, flows.StepStartWorkSelectTimeMode, payload); err != nil {
+			return "", true, err
+		}
+		h.logger.Info("telegram flow step advanced", "event", "telegram.flow_step_advanced", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "step", flows.StepStartWorkSelectTimeMode, "outcome", "success")
+		return i18n.T(lang, i18n.KeyStartWorkSelectTime), true, nil
+	case flows.StepStartWorkSelectTimeMode:
+		mode, prompt, ok := startModeFromText(text, lang)
+		if !ok {
+			return i18n.T(lang, i18n.KeyStartWorkSelectTime), true, nil
+		}
+		payload["time_mode"] = string(mode)
+		if mode == datetime.ModeNow {
+			return h.completeStartWork(ctx, state, payload, h.now(), lang)
+		}
+		next := flows.StepStartWorkEnterTime
+		if mode == datetime.ModeManual {
+			next = flows.StepStartWorkEnterManualDateTime
+		}
+		if _, err := h.flows.Advance(ctx, state, next, payload); err != nil {
+			return "", true, err
+		}
+		h.logger.Info("telegram flow step advanced", "event", "telegram.flow_step_advanced", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "step", next, "outcome", "success")
+		return prompt, true, nil
+	case flows.StepStartWorkEnterTime, flows.StepStartWorkEnterManualDateTime:
+		mode := datetime.Mode(payload["time_mode"])
+		startedAt, err := datetime.ParseStart(text, mode, h.now())
+		if err != nil {
+			h.logDateParse(state, "failure", err)
+			return DateTimeErrorMessage(lang, err), true, nil
+		}
+		h.logDateParse(state, "success", nil)
+		return h.completeStartWork(ctx, state, payload, startedAt, lang)
+	default:
+		return i18n.T(lang, i18n.KeyUnsupportedAction), true, nil
+	}
+}
+
+func (h *Handler) completeStartWork(ctx context.Context, state flows.State, payload map[string]string, startedAt time.Time, lang i18n.Language) (string, bool, error) {
+	var p people.Person
+	var r works.WorkRecord
+	var err error
+	if starter, ok := h.work.(WorkStartAtService); ok {
+		p, r, err = starter.StartAt(ctx, payload["first_name"], payload["last_name"], payload["title"], startedAt)
+	} else {
+		p, r, err = h.work.Start(ctx, payload["first_name"], payload["last_name"], payload["title"])
+	}
+	if err != nil {
+		return ErrorMessageLang(lang, err), true, nil
+	}
+	_ = h.flows.Complete(ctx, state.TelegramUserID, state.ChatID)
+	h.logger.Info("telegram flow completed", "event", "telegram.flow_completed", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "outcome", "success")
+	return WorkStartedMessageLang(lang, p, r), true, nil
+}
+
+func (h *Handler) executeFlowCommand(ctx context.Context, cmd Command, chat Chat, lang i18n.Language, outcome *string) (string, error) {
+	switch cmd.Name {
+	case CommandStopWork:
+		p, record, err := h.work.Stop(ctx, cmd.FirstName, cmd.LastName, cmd.Reason)
+		if err != nil {
+			*outcome = "failure"
+			return ErrorMessageLang(lang, err), nil
+		}
+		occurred := h.now()
+		if record.StoppedAt != nil {
+			occurred = *record.StoppedAt
+		}
+		if h.reports != nil {
+			if err := h.reports.RecordStopped(ctx, p.ID, record.ID, cmd.Reason, occurred); err != nil {
+				*outcome = "failure"
+				return "", err
+			}
+		}
+		warning := ""
+		if h.telegram != nil {
+			if err := h.telegram.SendMessage(ctx, chat.ID, StopAlertMessage(p, record)); err != nil {
+				warning = "alert delivery failed"
+				h.logger.Error("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", chat.ID, "outcome", "failure", "error", err.Error())
+				if h.reports != nil {
+					if recErr := h.reports.RecordAlertFailed(ctx, p.ID, record.ID, err.Error(), h.now()); recErr != nil {
+						*outcome = "failure"
+						return "", recErr
+					}
+				}
+			} else {
+				h.logger.Info("telegram alert send", "event", "telegram.alert_send", "operation", "telegram_send", "chat_id", chat.ID, "outcome", "success")
+			}
+		}
+		return WorkStoppedMessageLang(lang, p, record, warning), nil
+	default:
+		*outcome = "failure"
+		return ErrorMessageLang(lang, ErrMalformedCommand), nil
 	}
 }
 
@@ -485,7 +791,7 @@ func (h *Handler) languageForUser(ctx context.Context, userID int64) i18n.Langua
 	return lang
 }
 
-func (h *Handler) sendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
+func (h *Handler) sendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard any) error {
 	if h.telegram == nil {
 		return nil
 	}
@@ -495,6 +801,21 @@ func (h *Handler) sendMessageWithKeyboard(ctx context.Context, chatID int64, tex
 		}
 	}
 	return h.telegram.SendMessage(ctx, chatID, text)
+}
+
+func (h *Handler) keyboardForResponse(response string, lang i18n.Language) any {
+	switch response {
+	case HelpMessageLang(lang), MenuMessage(lang), i18n.T(lang, i18n.KeyLanguageChanged), i18n.T(lang, i18n.KeyFlowCancelled), i18n.T(lang, i18n.KeyFlowExpired):
+		return MainMenuKeyboard(i18n.Ukrainian)
+	case SettingsMessage(lang):
+		return SettingsKeyboard(lang)
+	case LanguageMessage(lang):
+		return LanguageKeyboard(lang)
+	case i18n.T(lang, i18n.KeyStartWorkSelectTime):
+		return StartTimeModeKeyboard(lang)
+	default:
+		return nil
+	}
 }
 
 func (h *Handler) answerCallback(ctx context.Context, callbackID, text string, userID int64, action string) error {
@@ -514,20 +835,45 @@ func (h *Handler) answerCallback(ctx context.Context, callbackID, text string, u
 	return nil
 }
 
-func (h *Handler) deleteCommandMessage(ctx context.Context, chatID int64, messageID int, userID int64, command string) {
-	if messageID == 0 || command == "" || !strings.HasPrefix(command, "/") {
+func (h *Handler) cleanupKind(ctx context.Context, text string, userID, chatID int64) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "/") {
+		return "slash_command"
+	}
+	if _, ok := CommandForKeyboardText(text); ok {
+		return "reply_keyboard"
+	}
+	if h.flows != nil {
+		if _, err := h.flows.Get(ctx, userID, chatID); err == nil || errors.Is(err, flows.ErrExpired) {
+			return "flow_input"
+		}
+	}
+	return ""
+}
+
+func (h *Handler) cleanupUserMessage(ctx context.Context, chatID int64, messageID int, userID int64, command, kind string) {
+	if messageID == 0 || kind == "" {
 		return
 	}
 	deleter, ok := h.telegram.(messageDeleter)
 	if !ok {
 		return
 	}
-	h.logger.Info("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "attempt")
+	if kind == "slash_command" {
+		h.logger.Info("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "attempt")
+	}
+	h.logger.Info("telegram message delete", "event", "telegram.message_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "message_kind", kind, "outcome", "attempt")
 	if err := deleter.DeleteMessage(ctx, chatID, messageID); err != nil {
-		h.logger.Warn("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "failure", "error", err.Error())
+		if kind == "slash_command" {
+			h.logger.Warn("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "failure", "error", err.Error())
+		}
+		h.logger.Warn("telegram message delete", "event", "telegram.message_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "message_kind", kind, "outcome", "failure", "error", err.Error())
 		return
 	}
-	h.logger.Info("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "success")
+	if kind == "slash_command" {
+		h.logger.Info("telegram command delete", "event", "telegram.command_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "outcome", "success")
+	}
+	h.logger.Info("telegram message delete", "event", "telegram.message_delete", "operation", "telegram_send", "chat_id", chatID, "user_id", userID, "message_id", messageID, "command", command, "message_kind", kind, "outcome", "success")
 }
 
 func commandName(text string) string {
@@ -535,7 +881,74 @@ func commandName(text string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return fields[0]
+	return normalizeCommandName(fields[0])
+}
+
+func parseNameAndRest(text string) (string, string, string, bool) {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) < 2 {
+		return "", "", "", false
+	}
+	rest := ""
+	if len(fields) > 2 {
+		rest = strings.Join(fields[2:], " ")
+	}
+	return fields[0], fields[1], rest, true
+}
+
+func languageFromText(text string) (i18n.Language, bool) {
+	for _, lang := range []i18n.Language{i18n.Ukrainian, i18n.English, i18n.Russian} {
+		switch text {
+		case i18n.T(lang, i18n.KeyLanguageUkrainian):
+			return i18n.Ukrainian, true
+		case i18n.T(lang, i18n.KeyLanguageEnglish):
+			return i18n.English, true
+		case i18n.T(lang, i18n.KeyLanguageRussian):
+			return i18n.Russian, true
+		}
+	}
+	return i18n.Ukrainian, false
+}
+
+func isCancelText(text string) bool {
+	for _, lang := range []i18n.Language{i18n.Ukrainian, i18n.English, i18n.Russian} {
+		if text == i18n.T(lang, i18n.KeyCancel) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBackText(text string) bool {
+	for _, lang := range []i18n.Language{i18n.Ukrainian, i18n.English, i18n.Russian} {
+		if text == i18n.T(lang, i18n.KeyBack) {
+			return true
+		}
+	}
+	return false
+}
+
+func startModeFromText(text string, lang i18n.Language) (datetime.Mode, string, bool) {
+	switch text {
+	case i18n.T(lang, i18n.KeyStartNow), i18n.T(i18n.Ukrainian, i18n.KeyStartNow), i18n.T(i18n.English, i18n.KeyStartNow), i18n.T(i18n.Russian, i18n.KeyStartNow):
+		return datetime.ModeNow, "", true
+	case i18n.T(lang, i18n.KeyStartToday), i18n.T(i18n.Ukrainian, i18n.KeyStartToday), i18n.T(i18n.English, i18n.KeyStartToday), i18n.T(i18n.Russian, i18n.KeyStartToday):
+		return datetime.ModeToday, i18n.T(lang, i18n.KeyStartWorkEnterTime), true
+	case i18n.T(lang, i18n.KeyStartYesterday), i18n.T(i18n.Ukrainian, i18n.KeyStartYesterday), i18n.T(i18n.English, i18n.KeyStartYesterday), i18n.T(i18n.Russian, i18n.KeyStartYesterday):
+		return datetime.ModeYesterday, i18n.T(lang, i18n.KeyStartWorkEnterTime), true
+	case i18n.T(lang, i18n.KeyStartManual), i18n.T(i18n.Ukrainian, i18n.KeyStartManual), i18n.T(i18n.English, i18n.KeyStartManual), i18n.T(i18n.Russian, i18n.KeyStartManual):
+		return datetime.ModeManual, i18n.T(lang, i18n.KeyStartWorkEnterManual), true
+	default:
+		return "", "", false
+	}
+}
+
+func (h *Handler) logDateParse(state flows.State, outcome string, err error) {
+	attrs := []any{"event", "telegram.datetime_parse", "operation", "telegram", "chat_id", state.ChatID, "user_id", state.TelegramUserID, "flow_type", state.FlowType, "outcome", outcome}
+	if err != nil {
+		attrs = append(attrs, "error", err.Error())
+	}
+	h.logger.Info("telegram datetime parse", attrs...)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
