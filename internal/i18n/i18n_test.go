@@ -30,3 +30,20 @@ func TestSupportedLanguages(t *testing.T) {
 		t.Fatalf("pl should not be supported")
 	}
 }
+
+func TestNewFlowAndDateTimeKeysExistForAllLanguages(t *testing.T) {
+	keys := []string{
+		KeyCancel, KeyBack, KeyFlowCancelled, KeyFlowExpired,
+		KeyAddPersonEnterName, KeyAddPersonInvalidName, KeyStopWorkEnterInput,
+		KeyStartWorkEnterPerson, KeyStartWorkEnterTitle, KeyStartWorkSelectTime,
+		KeyStartWorkEnterTime, KeyStartWorkEnterManual, KeyDateTimeInvalid,
+		KeyDateTimeFuture, KeyStartNow, KeyStartToday, KeyStartYesterday, KeyStartManual,
+	}
+	for _, key := range keys {
+		for _, lang := range []Language{Ukrainian, English, Russian} {
+			if got := T(lang, key); got == "" || got == key {
+				t.Fatalf("%s/%s missing translation: %q", lang, key, got)
+			}
+		}
+	}
+}

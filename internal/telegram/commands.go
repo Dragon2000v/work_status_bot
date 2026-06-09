@@ -3,6 +3,8 @@ package telegram
 import (
 	"errors"
 	"strings"
+
+	"work-status-bot/internal/i18n"
 )
 
 const (
@@ -37,7 +39,7 @@ func ParseCommand(text string) (Command, error) {
 	if len(fields) == 0 {
 		return Command{}, ErrMalformedCommand
 	}
-	cmd := Command{Name: fields[0]}
+	cmd := Command{Name: normalizeCommandName(fields[0])}
 	switch cmd.Name {
 	case CommandHelp, CommandStatus, CommandSetup, CommandGroups, CommandDisableGroup:
 		return cmd, nil
@@ -70,6 +72,50 @@ func ParseCommand(text string) (Command, error) {
 		return Command{}, ErrMalformedCommand
 	}
 	return cmd, nil
+}
+
+func normalizeCommandName(name string) string {
+	if i := strings.Index(name, "@"); i >= 0 {
+		name = name[:i]
+	}
+	return name
+}
+
+func CommandForKeyboardText(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	for _, lang := range []i18n.Language{i18n.Ukrainian, i18n.English, i18n.Russian} {
+		switch text {
+		case i18n.T(lang, i18n.KeyMenuAddPerson):
+			return CommandAddPerson, true
+		case i18n.T(lang, i18n.KeyMenuStartWork):
+			return CommandStartWork, true
+		case i18n.T(lang, i18n.KeyMenuStatus):
+			return CommandStatus, true
+		case i18n.T(lang, i18n.KeyMenuStopWork):
+			return CommandStopWork, true
+		case i18n.T(lang, i18n.KeyMenuReportMonth):
+			return CommandReportMonth, true
+		case i18n.T(lang, i18n.KeyMenuHelp):
+			return CommandHelp, true
+		case i18n.T(lang, i18n.KeyMenuSettings):
+			return "/settings", true
+		}
+	}
+	return "", false
+}
+
+func NativeBotCommands() []BotCommand {
+	return []BotCommand{
+		{Command: "setup", Description: "Налаштувати групу"},
+		{Command: "groups", Description: "Показати групи"},
+		{Command: "disable_group", Description: "Вимкнути групу"},
+		{Command: "add_person", Description: "Додати людину"},
+		{Command: "start_work", Description: "Почати роботу"},
+		{Command: "status", Description: "Статус"},
+		{Command: "stop_work", Description: "Зупинити роботу"},
+		{Command: "report_month", Description: "Місячний звіт"},
+		{Command: "help", Description: "Допомога"},
+	}
 }
 
 func splitCommand(text string) []string {

@@ -15,6 +15,7 @@ import (
 
 	"work-status-bot/internal/config"
 	"work-status-bot/internal/database"
+	"work-status-bot/internal/flows"
 	"work-status-bot/internal/groups"
 	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/people"
@@ -68,17 +69,21 @@ func main() {
 	workRepo := works.NewRepository(db)
 	reportRepo := reports.NewRepository(db)
 	userRepo := users.NewRepository(db)
+	flowRepo := flows.NewRepository(db)
 	groupRepo := groups.NewRepository(db)
 	peopleSvc := people.NewService(peopleRepo)
 	workSvc := works.NewService(peopleRepo, workRepo)
 	userSvc := users.NewService(userRepo)
+	flowSvc := flows.NewService(flowRepo)
 	groupSvc := groups.NewService(groupRepo, cfg.TelegramGroupChatID)
 	tg := telegram.NewClientWithLogger(cfg.TelegramBotToken, http.DefaultClient, log)
 	if err := registerTelegramWebhook(ctx, cfg, tg, log); err != nil {
 		os.Exit(1)
 	}
+	registerTelegramCommands(ctx, tg, log)
 	reportSvc := reports.NewServiceWithLogger(reportRepo, peopleRepo, workSvc, tg, cfg.TelegramGroupChatID, log)
 	handler := telegram.NewHandlerWithGroupsUsersAndLogger(cfg.TelegramGroupChatID, peopleSvc, workSvc, reportSvc, groupSvc, userSvc, tg, log)
+	handler.SetFlows(flowSvc)
 
 	router := NewRouterWithGroupTargets(cfg.CronSecret, handler, reportSvc, groupSvc, log)
 	log.Info("application listen", "event", "app.listen", "operation", "startup", "addr", cfg.AppAddr, "outcome", "success")
@@ -92,6 +97,10 @@ type webhookRegistrar interface {
 	SetWebhook(ctx context.Context, webhookURL, secretToken string) error
 }
 
+type commandRegistrar interface {
+	SetMyCommands(ctx context.Context, commands []telegram.BotCommand) error
+}
+
 func registerTelegramWebhook(ctx context.Context, cfg config.Config, tg webhookRegistrar, log *slog.Logger) error {
 	if !cfg.TelegramAutoSetWebhook {
 		log.Info("telegram webhook registration", "event", "telegram.webhook_registration", "operation", "telegram_webhook", "outcome", "skipped")
@@ -101,6 +110,19 @@ func registerTelegramWebhook(ctx context.Context, cfg config.Config, tg webhookR
 		return err
 	}
 	return nil
+}
+
+func registerTelegramCommands(ctx context.Context, tg commandRegistrar, log *slog.Logger) {
+	if tg == nil {
+		return
+	}
+	commands := telegram.NativeBotCommands()
+	log.Info("telegram command menu registration", "event", "telegram.command_menu_registration", "operation", "telegram_command_menu", "outcome", "attempt", "command_count", len(commands))
+	if err := tg.SetMyCommands(ctx, commands); err != nil {
+		log.Error("telegram command menu registration", "event", "telegram.command_menu_registration", "operation", "telegram_command_menu", "outcome", "failure", "error", "registration failed")
+		return
+	}
+	log.Info("telegram command menu registration", "event", "telegram.command_menu_registration", "operation", "telegram_command_menu", "outcome", "success", "command_count", len(commands))
 }
 
 func NewRouter(cronSecret string, telegramHandler http.Handler, reportSvc cronReportService) http.Handler {

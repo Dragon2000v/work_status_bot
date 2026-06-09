@@ -115,3 +115,20 @@ func TestWorkServiceStartStatusStop(t *testing.T) {
 		t.Fatalf("want no active, got %v", err)
 	}
 }
+
+func TestWorkServiceStartAtUsesExplicitUTCStart(t *testing.T) {
+	personRepo := newWorkPeopleRepo()
+	p, _ := personRepo.Create(context.Background(), people.Person{ID: primitive.NewObjectID(), FirstName: "Ivan", LastName: "Petrenko", NormalizedFullName: people.NormalizeFullName("Ivan", "Petrenko")})
+	workRepo := &memWorkRepo{}
+	svc := NewService(personRepo, workRepo)
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	svc.SetNow(func() time.Time { return now })
+	startedAt := time.Date(2026, 6, 8, 9, 30, 0, 0, time.FixedZone("kyiv", 3*3600))
+	_, rec, err := svc.StartAt(context.Background(), p.FirstName, p.LastName, "Manual", startedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.StartedAt.Equal(startedAt.UTC()) || !rec.CreatedAt.Equal(now) {
+		t.Fatalf("bad timestamps: %#v", rec)
+	}
+}

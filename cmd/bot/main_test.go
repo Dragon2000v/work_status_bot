@@ -16,6 +16,7 @@ import (
 	"work-status-bot/internal/groups"
 	applogger "work-status-bot/internal/logger"
 	"work-status-bot/internal/reports"
+	"work-status-bot/internal/telegram"
 )
 
 type fakeCronReports struct {
@@ -32,6 +33,12 @@ type fakeWebhookRegistrar struct {
 	err         error
 }
 
+type fakeCommandRegistrar struct {
+	calls    int
+	commands []telegram.BotCommand
+	err      error
+}
+
 type fakeCronTargets struct {
 	targets []groups.ReportDeliveryTarget
 	err     error
@@ -45,6 +52,12 @@ func (f *fakeWebhookRegistrar) SetWebhook(ctx context.Context, webhookURL, secre
 	f.calls++
 	f.webhookURL = webhookURL
 	f.secretToken = secretToken
+	return f.err
+}
+
+func (f *fakeCommandRegistrar) SetMyCommands(ctx context.Context, commands []telegram.BotCommand) error {
+	f.calls++
+	f.commands = commands
 	return f.err
 }
 
@@ -258,6 +271,32 @@ func TestRegisterTelegramWebhookFailure(t *testing.T) {
 	cfg := config.Config{TelegramAutoSetWebhook: true, TelegramWebhookURL: "https://example.com/telegram/webhook", TelegramWebhookSecret: "webhook-secret"}
 	if err := registerTelegramWebhook(context.Background(), cfg, registrar, log); err == nil {
 		t.Fatalf("want registration error")
+	}
+}
+
+func TestRegisterTelegramCommandsLogsSuccessAndFailureWithoutStopping(t *testing.T) {
+	var buf bytes.Buffer
+	log, _ := applogger.New(&buf, applogger.EnvProduction, "info")
+	ok := &fakeCommandRegistrar{}
+	registerTelegramCommands(context.Background(), ok, log)
+	if ok.calls != 1 || len(ok.commands) != 9 {
+		t.Fatalf("commands not registered: %#v", ok)
+	}
+	fail := &fakeCommandRegistrar{err: errors.New("telegram-token webhook-secret cron-secret failed")}
+	registerTelegramCommands(context.Background(), fail, log)
+	if fail.calls != 1 {
+		t.Fatalf("failure path did not call registrar")
+	}
+	out := buf.String()
+	for _, want := range []string{`"event":"telegram.command_menu_registration"`, `"outcome":"attempt"`, `"outcome":"success"`, `"outcome":"failure"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in %s", want, out)
+		}
+	}
+	for _, secret := range []string{"telegram-token", "webhook-secret", "cron-secret"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("secret leaked: %s", out)
+		}
 	}
 }
 

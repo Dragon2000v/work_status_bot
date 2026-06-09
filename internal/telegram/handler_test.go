@@ -116,6 +116,12 @@ func (s fakeWorkService) Start(ctx context.Context, firstName, lastName, title s
 	return svc.Start(ctx, firstName, lastName, title)
 }
 
+func (s fakeWorkService) StartAt(ctx context.Context, firstName, lastName, title string, startedAt time.Time) (people.Person, works.WorkRecord, error) {
+	svc := works.NewService(s.people, s.repo)
+	svc.SetNow(func() time.Time { return s.now })
+	return svc.StartAt(ctx, firstName, lastName, title, startedAt)
+}
+
 func (s fakeWorkService) Status(ctx context.Context) ([]people.Person, []works.WorkRecord, error) {
 	persons, err := s.people.List(ctx)
 	return persons, s.repo.records, err

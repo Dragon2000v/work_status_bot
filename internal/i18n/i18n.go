@@ -53,6 +53,24 @@ const (
 	KeyGroupDisabled        = "group.disabled"
 	KeyGroupAlreadyDisabled = "group.already_disabled"
 	KeyGroupNoStored        = "group.no_stored"
+	KeyCancel               = "flow.cancel"
+	KeyBack                 = "flow.back"
+	KeyFlowCancelled        = "flow.cancelled"
+	KeyFlowExpired          = "flow.expired"
+	KeyAddPersonEnterName   = "add_person.enter_name"
+	KeyAddPersonInvalidName = "add_person.invalid_name"
+	KeyStopWorkEnterInput   = "stop_work.enter_input"
+	KeyStartWorkEnterPerson = "start_work.enter_person"
+	KeyStartWorkEnterTitle  = "start_work.enter_title"
+	KeyStartWorkSelectTime  = "start_work.select_time"
+	KeyStartWorkEnterTime   = "start_work.enter_time"
+	KeyStartWorkEnterManual = "start_work.enter_manual"
+	KeyDateTimeInvalid      = "datetime.invalid"
+	KeyDateTimeFuture       = "datetime.future"
+	KeyStartNow             = "start_work.now"
+	KeyStartToday           = "start_work.today"
+	KeyStartYesterday       = "start_work.yesterday"
+	KeyStartManual          = "start_work.manual"
 )
 
 var translations = map[string]map[Language]string{
@@ -275,6 +293,96 @@ var translations = map[string]map[Language]string{
 		Ukrainian: "Для поточної групи немає збереженого запису, який можна вимкнути.",
 		English:   "There is no stored record for the current group to disable.",
 		Russian:   "Для текущей группы нет сохраненной записи, которую можно отключить.",
+	},
+	KeyCancel: {
+		Ukrainian: "Скасувати",
+		English:   "Cancel",
+		Russian:   "Отменить",
+	},
+	KeyBack: {
+		Ukrainian: "Назад",
+		English:   "Back",
+		Russian:   "Назад",
+	},
+	KeyFlowCancelled: {
+		Ukrainian: "Дію скасовано.",
+		English:   "Action cancelled.",
+		Russian:   "Действие отменено.",
+	},
+	KeyFlowExpired: {
+		Ukrainian: "Час очікування минув. Почніть дію знову.",
+		English:   "This flow expired. Start again.",
+		Russian:   "Время ожидания истекло. Начните действие заново.",
+	},
+	KeyAddPersonEnterName: {
+		Ukrainian: "Введіть ім'я та прізвище. Наприклад: Іван Петренко",
+		English:   "Enter first name and last name. Example: Ivan Petrenko",
+		Russian:   "Введите имя и фамилию. Например: Иван Петренко",
+	},
+	KeyAddPersonInvalidName: {
+		Ukrainian: "Потрібні ім'я та прізвище. Наприклад: Іван Петренко",
+		English:   "First name and last name are required. Example: Ivan Petrenko",
+		Russian:   "Нужны имя и фамилия. Например: Иван Петренко",
+	},
+	KeyStopWorkEnterInput: {
+		Ukrainian: "Введіть ім'я та прізвище, за потреби причину. Наприклад: Іван Петренко завершено",
+		English:   "Enter first name and last name, with optional reason. Example: Ivan Petrenko done",
+		Russian:   "Введите имя и фамилию, при необходимости причину. Например: Иван Петренко завершено",
+	},
+	KeyStartWorkEnterPerson: {
+		Ukrainian: "Введіть ім'я та прізвище. Наприклад: Іван Петренко",
+		English:   "Enter first name and last name. Example: Ivan Petrenko",
+		Russian:   "Введите имя и фамилию. Например: Иван Петренко",
+	},
+	KeyStartWorkEnterTitle: {
+		Ukrainian: "Введіть назву роботи.",
+		English:   "Enter work title.",
+		Russian:   "Введите название работы.",
+	},
+	KeyStartWorkSelectTime: {
+		Ukrainian: "Як встановити дату та час початку?",
+		English:   "How should the start date and time be set?",
+		Russian:   "Как установить дату и время начала?",
+	},
+	KeyStartWorkEnterTime: {
+		Ukrainian: "Введіть час у форматі HH:mm. Наприклад: 09:30",
+		English:   "Enter time as HH:mm. Example: 09:30",
+		Russian:   "Введите время в формате HH:mm. Например: 09:30",
+	},
+	KeyStartWorkEnterManual: {
+		Ukrainian: "Введіть дату й час: DD.MM HH:mm, DD.MM.YYYY HH:mm або YYYY-MM-DD HH:mm.",
+		English:   "Enter date and time: DD.MM HH:mm, DD.MM.YYYY HH:mm, or YYYY-MM-DD HH:mm.",
+		Russian:   "Введите дату и время: DD.MM HH:mm, DD.MM.YYYY HH:mm или YYYY-MM-DD HH:mm.",
+	},
+	KeyDateTimeInvalid: {
+		Ukrainian: "Неправильний формат дати/часу. Приклади: 08.06 09:30, 08.06.2026 09:30, 2026-06-08 09:30.",
+		English:   "Invalid date/time format. Examples: 08.06 09:30, 08.06.2026 09:30, 2026-06-08 09:30.",
+		Russian:   "Неверный формат даты/времени. Примеры: 08.06 09:30, 08.06.2026 09:30, 2026-06-08 09:30.",
+	},
+	KeyDateTimeFuture: {
+		Ukrainian: "Дата й час початку не можуть бути в майбутньому.",
+		English:   "Start date/time cannot be in the future.",
+		Russian:   "Дата и время начала не могут быть в будущем.",
+	},
+	KeyStartNow: {
+		Ukrainian: "Почати зараз",
+		English:   "Start now",
+		Russian:   "Начать сейчас",
+	},
+	KeyStartToday: {
+		Ukrainian: "Сьогодні",
+		English:   "Today",
+		Russian:   "Сегодня",
+	},
+	KeyStartYesterday: {
+		Ukrainian: "Вчора",
+		English:   "Yesterday",
+		Russian:   "Вчера",
+	},
+	KeyStartManual: {
+		Ukrainian: "Ввести дату вручну",
+		English:   "Enter date manually",
+		Russian:   "Ввести дату вручную",
 	},
 }
 
