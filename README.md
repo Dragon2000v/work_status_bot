@@ -37,7 +37,7 @@ Env variable source:
 - `MONGODB_URI`: MongoDB Atlas connection string from Atlas cluster connect flow.
 - `MONGODB_DATABASE`: database name to use in MongoDB Atlas.
 - `TELEGRAM_BOT_TOKEN`: token from BotFather.
-- `TELEGRAM_GROUP_CHAT_ID`: Telegram group chat ID for allowed commands and alerts.
+- `TELEGRAM_GROUP_CHAT_ID`: optional fallback Telegram group chat ID for local development and backward compatibility.
 - `TELEGRAM_WEBHOOK_SECRET`: random secret used when configuring Telegram webhook delivery.
 - `TELEGRAM_WEBHOOK_URL`: public HTTPS Telegram webhook URL, usually `https://<host>/telegram/webhook`.
 - `TELEGRAM_AUTO_SET_WEBHOOK`: `true` to register the webhook on startup, `false` to skip registration.
@@ -69,6 +69,10 @@ Example events:
 - `telegram.callback_answer`
 - `telegram.user_language_changed`
 - `telegram.command_delete`
+- `telegram.group_setup`
+- `telegram.group_authorization`
+- `telegram.group_list`
+- `telegram.group_disable`
 - `telegram.send`
 - `telegram.alert_send`
 - `cron.monthly_report_triggered`
@@ -95,6 +99,9 @@ InlineKeyboardMarkup and support the same core actions as text commands:
 
 ```text
 /help
+/setup
+/groups
+/disable_group
 /add_person Ivan Petrenko
 /start_work Ivan Petrenko "API fix"
 /status
@@ -108,6 +115,34 @@ attempts to delete only that user's command message. This cleanup is best-effort
 bot has no permission to delete messages, the command still completes and the failure is
 logged. Bot responses, reports, alerts, incident messages, and monthly reports are not
 deleted by command cleanup.
+
+## Multi-Group Setup
+
+The bot can serve multiple Telegram groups with one deployment and one MongoDB database.
+A group registers itself by running:
+
+```text
+/setup
+```
+
+`/setup` works only in Telegram group or supergroup chats. It stores the current chat id,
+group title, setup user id, optional setup username, enabled status, and UTC timestamps in
+the `configured_groups` collection. Re-running `/setup` is idempotent: it updates the
+stored title/setup metadata and re-enables a disabled group.
+
+Unknown groups may use only `/setup` and `/help`. Operational commands are rejected until
+the group is configured. `TELEGRAM_GROUP_CHAT_ID` remains an allowed fallback group when
+configured, but adding new groups no longer requires changing env vars or redeploying.
+
+`/groups` can be run only from an enabled configured group or the fallback group. Its
+output lists all stored configured groups, including disabled groups, and shows each
+group's enabled/disabled status.
+
+`/disable_group` disables the current stored group without deleting its history. A
+disabled group cannot run `/groups` or operational commands unless it is re-enabled with
+`/setup` or it matches the fallback group id.
+
+MVP limitation: `/setup` and `/disable_group` do not verify Telegram admin status.
 
 ## HTTP Routes
 
@@ -126,7 +161,7 @@ go run ./cmd/bot
 ## Validation Notes
 
 - Configure Telegram webhook to `https://<host>/telegram/webhook`.
-- Create MongoDB Atlas database and let startup ensure indexes for people, work records, incidents, monthly reports, and group config.
+- Create MongoDB Atlas database and let startup ensure indexes for people, work records, incidents, monthly reports, user settings, configured groups, and legacy group config.
 - Startup also ensures the `user_settings` index used for per-user language preferences.
 - Trigger monthly reports from external scheduler with `POST /cron/monthly-report`; do not run in-process cron.
 - `GET /health` should respond under 1 second.

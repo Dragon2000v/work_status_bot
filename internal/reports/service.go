@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
+	"work-status-bot/internal/groups"
 	"work-status-bot/internal/people"
 	"work-status-bot/internal/works"
 
@@ -28,11 +30,19 @@ type Service struct {
 	work      WorkLister
 	telegram  TelegramSender
 	groupChat int64
+	logger    *slog.Logger
 	now       func() time.Time
 }
 
 func NewService(repo Repository, peopleRepo people.Repository, work WorkLister, telegram TelegramSender, groupChat int64) *Service {
-	return &Service{repo: repo, people: peopleRepo, work: work, telegram: telegram, groupChat: groupChat, now: func() time.Time { return time.Now().UTC() }}
+	return NewServiceWithLogger(repo, peopleRepo, work, telegram, groupChat, slog.Default())
+}
+
+func NewServiceWithLogger(repo Repository, peopleRepo people.Repository, work WorkLister, telegram TelegramSender, groupChat int64, log *slog.Logger) *Service {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Service{repo: repo, people: peopleRepo, work: work, telegram: telegram, groupChat: groupChat, logger: log, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (s *Service) SetNow(now func() time.Time) {
@@ -100,14 +110,31 @@ func (s *Service) GenerateMonthly(ctx context.Context, month, source string) (Ge
 }
 
 func (s *Service) SendReportToGroup(ctx context.Context, report MonthlyReport, duplicate bool) error {
-	if s.telegram == nil || s.groupChat == 0 {
+	return s.SendReportToChat(ctx, s.groupChat, report, duplicate)
+}
+
+func (s *Service) SendReportToChat(ctx context.Context, chatID int64, report MonthlyReport, duplicate bool) error {
+	if s.telegram == nil || chatID == 0 {
 		return nil
 	}
 	prefix := ""
 	if duplicate {
 		prefix = "Звіт уже існує.\n"
 	}
-	return s.telegram.SendMessage(ctx, s.groupChat, prefix+report.Content)
+	return s.telegram.SendMessage(ctx, chatID, prefix+report.Content)
+}
+
+func (s *Service) SendReportToTargets(ctx context.Context, report MonthlyReport, duplicate bool, targets []groups.ReportDeliveryTarget) error {
+	for _, target := range targets {
+		start := time.Now()
+		err := s.SendReportToChat(ctx, target.TelegramChatID, report, duplicate)
+		if err != nil {
+			s.logger.Error("cron monthly report send", "event", "cron.monthly_report_send", "operation", "cron", "chat_id", target.TelegramChatID, "month", report.Month, "outcome", "failed", "duration_ms", time.Since(start).Milliseconds(), "error", err.Error())
+			return err
+		}
+		s.logger.Info("cron monthly report send", "event", "cron.monthly_report_send", "operation", "cron", "chat_id", target.TelegramChatID, "month", report.Month, "outcome", "success", "duration_ms", time.Since(start).Milliseconds())
+	}
+	return nil
 }
 
 func RenderMonthlyReport(month string, persons []people.Person, records []works.WorkRecord, incidents []Incident, now time.Time) string {

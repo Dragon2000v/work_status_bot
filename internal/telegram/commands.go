@@ -6,12 +6,15 @@ import (
 )
 
 const (
-	CommandHelp        = "/help"
-	CommandAddPerson   = "/add_person"
-	CommandStartWork   = "/start_work"
-	CommandStatus      = "/status"
-	CommandStopWork    = "/stop_work"
-	CommandReportMonth = "/report_month"
+	CommandHelp         = "/help"
+	CommandAddPerson    = "/add_person"
+	CommandStartWork    = "/start_work"
+	CommandStatus       = "/status"
+	CommandStopWork     = "/stop_work"
+	CommandReportMonth  = "/report_month"
+	CommandSetup        = "/setup"
+	CommandGroups       = "/groups"
+	CommandDisableGroup = "/disable_group"
 )
 
 var ErrMalformedCommand = errors.New("malformed command")
@@ -36,7 +39,7 @@ func ParseCommand(text string) (Command, error) {
 	}
 	cmd := Command{Name: fields[0]}
 	switch cmd.Name {
-	case CommandHelp, CommandStatus:
+	case CommandHelp, CommandStatus, CommandSetup, CommandGroups, CommandDisableGroup:
 		return cmd, nil
 	case CommandAddPerson:
 		if len(fields) != 3 {
